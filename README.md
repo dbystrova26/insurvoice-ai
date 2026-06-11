@@ -1,6 +1,6 @@
 # insurvoice-ai
 
-**AI voice agent for insurance customer service — a Parloa-style POC.**  
+**AI voice agent for insurance customer service.**  
 Ironhack AI Consulting Bootcamp — Final Project  
 EU AI Act & GDPR compliant. Speech-to-text → AI reasoning → text-to-speech.
 
