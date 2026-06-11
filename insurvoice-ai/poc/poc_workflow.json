@@ -1,0 +1,226 @@
+{
+  "name": "InsurBot AI — Voice Agent Orchestration",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "insurbot-webhook",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "node_webhook_trigger",
+      "name": "Webhook: Receive from Voiceflow",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "notes": "Receives POST from Voiceflow with: {message, conversation_id, turn_number, history}"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Load knowledge base context\n// In production: load from vector DB\n// In POC: inline JSON\nconst knowledgeBase = [\n  {\n    topic: 'home_water_damage',\n    q: 'Does home insurance cover water damage from a burst pipe?',\n    a: 'Yes. Burst pipe water damage is covered under Hausratversicherung as Leitungswasser damage. Covers furniture, electronics, personal belongings. EUR 250 deductible applies. Flooding from outside requires separate flood cover.'\n  },\n  {\n    topic: 'claim_process',\n    q: 'How do I file a claim?',\n    a: 'File online at mypolicy.example.com, by calling this line, or email claims@example-insurance.de. You need: policy number, incident date, description, photos if available. Acknowledged within 2 business days.'\n  },\n  {\n    topic: 'claim_timeline',\n    q: 'How long does claim processing take?',\n    a: 'Standard claims: 10-15 business days. Complex claims (>EUR 5,000): up to 30 days. Email updates provided. Urgent claims (emergency repairs) can be fast-tracked.'\n  },\n  {\n    topic: 'policy_renewal',\n    q: 'How do I renew my policy?',\n    a: 'Policies renew automatically. Renewal notice sent 6 weeks before renewal date. To cancel: written notice 4 weeks before renewal date. To update coverage: call or use online portal.'\n  },\n  {\n    topic: 'premium_increase',\n    q: 'Why has my premium increased?',\n    a: 'Premiums change due to: annual market adjustment, changes to risk profile, or a prior claim. Breakdown in renewal letter. Errors can be escalated to billing specialist.'\n  },\n  {\n    topic: 'cancel_policy',\n    q: 'How do I cancel my policy?',\n    a: 'Cancel at annual renewal with 4 weeks written notice. Immediate cancellation possible if risk circumstances change significantly. Send signed letter/email to cancellations@example-insurance.de with policy number.'\n  }\n];\n\nconst kbContext = knowledgeBase\n  .map(item => `Q: ${item.q}\\nA: ${item.a}`)\n  .join('\\n\\n');\n\nreturn [{ json: { ...items[0].json, kbContext } }];"
+      },
+      "id": "node_load_kb",
+      "name": "Load Knowledge Base",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [460, 300],
+      "notes": "Inline KB for POC. Replace with vector DB query in production."
+    },
+    {
+      "parameters": {
+        "functionCode": "const { message, conversation_id, history, kbContext, turn_number } = items[0].json;\n\nconst historyText = history && history.length > 0\n  ? '\\n\\nConversation so far:\\n' + history.map(t => `${t.role}: ${t.text}`).join('\\n')\n  : '';\n\nconst isFirstTurn = !turn_number || turn_number === 1;\nconst disclosureInstruction = isFirstTurn\n  ? 'IMPORTANT: This is the first turn. You MUST begin your response by identifying yourself as an AI: \"Hi, I am InsurBot, an AI assistant for Allianz Direct.\" This is required by EU AI Act Article 52.'  \n  : 'Do NOT repeat the AI disclosure — you already gave it on the first turn.';\n\nconst systemPrompt = `You are InsurBot, an AI-powered customer service agent for Allianz Direct insurance.\n\n${disclosureInstruction}\n\nYour role:\n- Answer insurance queries accurately using ONLY the knowledge base provided\n- If the answer is not in the knowledge base, say so honestly and offer to escalate\n- Never make up policy terms, coverage details, or claim decisions\n- Be concise, warm, and professional\n- Detect escalation signals: explicit request for human, expressions of anger/distress, legal threats, complaints\n\nKNOWLEDGE BASE:\n${kbContext}\n\nRespond ONLY with a JSON object in this exact format (no markdown):\n{\n  \"intent\": \"<one of: policy_coverage | file_claim | claim_status | billing_query | policy_renewal | cancel_policy | escalate_human | general_info | out_of_scope>\",\n  \"confidence\": <0.0-1.0>,\n  \"response\": \"<your response to the customer>\",\n  \"should_escalate\": <true|false>,\n  \"escalation_reason\": \"<null or brief reason>\"\n}`;\n\nreturn [{ json: { ...items[0].json, systemPrompt, historyText } }];"
+      },
+      "id": "node_build_prompt",
+      "name": "Build Claude Prompt",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-opus-4-6"
+            },
+            {
+              "name": "max_tokens",
+              "value": "600"
+            },
+            {
+              "name": "system",
+              "value": "={{ $json.systemPrompt }}"
+            },
+            {
+              "name": "messages",
+              "value": "=[{\"role\": \"user\", \"content\": {{ JSON.stringify($json.message + $json.historyText) }}}]"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node_claude_api",
+      "name": "Claude API — Intent + Response",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [900, 300],
+      "notes": "Credential: set ANTHROPIC_API_KEY in n8n credentials as HTTP Header Auth (name: x-api-key)"
+    },
+    {
+      "parameters": {
+        "functionCode": "const raw = items[0].json.content[0].text.trim();\nlet parsed;\ntry {\n  parsed = JSON.parse(raw);\n} catch(e) {\n  // Fallback if Claude wraps in markdown\n  const match = raw.match(/\\{[\\s\\S]*\\}/);\n  parsed = match ? JSON.parse(match[0]) : {\n    intent: 'general_info',\n    confidence: 0.5,\n    response: 'I apologise, I had trouble understanding. Could you rephrase your question?',\n    should_escalate: false,\n    escalation_reason: null\n  };\n}\n\nreturn [{ json: { ...items[0].json, ...parsed } }];"
+      },
+      "id": "node_parse_response",
+      "name": "Parse Claude Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.should_escalate }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "node_escalation_router",
+      "name": "Escalation Router",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1340, 300],
+      "notes": "Routes to escalation branch if should_escalate=true"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ response: $json.response, intent: $json.intent, escalated: false, conversation_id: $json.conversation_id }) }}"
+      },
+      "id": "node_return_response",
+      "name": "Return Response to Voiceflow",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1560, 180]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "model", "value": "claude-opus-4-6" },
+            { "name": "max_tokens", "value": "200" },
+            {
+              "name": "messages",
+              "value": "=[{\"role\": \"user\", \"content\": \"Summarise this customer conversation in 2 sentences for the human agent who will take over. Include the customer's main issue and any key details mentioned.\\n\\nConversation: {{ $json.historyText }}\\nLast message: {{ $json.message }}\\nDetected intent: {{ $json.intent }}\"}]"
+            }
+          ]
+        }
+      },
+      "id": "node_escalation_summary",
+      "name": "Generate Handoff Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1560, 420]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ response: 'Connecting you to a specialist now. Estimated wait: 2-3 minutes. Your reference is ' + $json.conversation_id + '.', intent: $json.intent, escalated: true, escalation_reason: $json.escalation_reason, handoff_summary: $json.content[0].text, conversation_id: $json.conversation_id }) }}"
+      },
+      "id": "node_return_escalation",
+      "name": "Return Escalation Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1780, 420]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": { "value": "YOUR_GOOGLE_SHEET_ID" },
+        "sheetName": "Conversation Log",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ new Date().toISOString() }}",
+            "conversation_id": "={{ $json.conversation_id }}",
+            "intent": "={{ $json.intent }}",
+            "confidence": "={{ $json.confidence }}",
+            "escalated": "={{ $json.should_escalate }}",
+            "turn_number": "={{ $json.turn_number }}"
+          }
+        }
+      },
+      "id": "node_log_sheet",
+      "name": "Log to Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1340, 500],
+      "notes": "Optional: replace sheet ID with your own. Can be disabled without breaking core flow."
+    }
+  ],
+  "connections": {
+    "Webhook: Receive from Voiceflow": {
+      "main": [[{ "node": "Load Knowledge Base", "type": "main", "index": 0 }]]
+    },
+    "Load Knowledge Base": {
+      "main": [[{ "node": "Build Claude Prompt", "type": "main", "index": 0 }]]
+    },
+    "Build Claude Prompt": {
+      "main": [[{ "node": "Claude API — Intent + Response", "type": "main", "index": 0 }]]
+    },
+    "Claude API — Intent + Response": {
+      "main": [[{ "node": "Parse Claude Response", "type": "main", "index": 0 }]]
+    },
+    "Parse Claude Response": {
+      "main": [
+        [{ "node": "Escalation Router", "type": "main", "index": 0 }],
+        [{ "node": "Log to Google Sheets", "type": "main", "index": 0 }]
+      ]
+    },
+    "Escalation Router": {
+      "main": [
+        [{ "node": "Return Response to Voiceflow", "type": "main", "index": 0 }],
+        [{ "node": "Generate Handoff Summary", "type": "main", "index": 0 }]
+      ]
+    },
+    "Generate Handoff Summary": {
+      "main": [[{ "node": "Return Escalation Response", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromAList"
+  },
+  "meta": {
+    "instanceId": "ironhack-final-project",
+    "description": "InsurBot AI — Voiceflow to Claude API orchestration. Classifies intent, retrieves KB answer, manages escalation. Part of Ironhack AI Consulting Bootcamp final project."
+  }
+}
