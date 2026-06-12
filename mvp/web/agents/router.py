@@ -15,11 +15,11 @@ from .base import BaseAgent
 
 
 ROUTES = {
-    "claims": "Claims questions: filing a claim, claim status, claim disputes, what to do after an incident",
-    "billing": "Billing questions: premiums, invoices, payment methods, charges, price increases",
-    "policy": "Policy questions: what's covered, coverage limits, renewals, cancellations, adding people",
-    "escalation": "Anything requiring a human: explicit request for an agent, complaints, anger, legal threats, account-specific data the AI cannot access",
-    "general": "Greetings, opening hours, general info, small talk, or anything that doesn't fit the above",
+    "claims": "Filing a claim, claim status, claim disputes, required documents for a claim, what to do after an incident",
+    "billing": "Premiums, invoices, payment methods, charges, price increases, refunds, discounts",
+    "policy": "What is covered, coverage limits, renewals, cancellations, adding people, liability coverage, damage scenarios (dog, accidental breakage), what insurance covers",
+    "escalation": "ONLY when customer EXPLICITLY asks to speak to a human agent, expresses serious anger, or makes a legal threat. Do NOT route process complaints, AI identity questions, or document location questions to escalation.",
+    "general": "Greetings, opening hours, contact info, portal access, policy documents location, how to make a complaint, whether the agent is AI or human, small talk, anything not fitting above",
 }
 
 
@@ -44,7 +44,11 @@ Analyse the customer's latest message in the context of the conversation, then r
 }}
 
 Routing rules:
-- If the customer asks for a human, is angry, threatens legal action, or wants something requiring their specific account data → route "escalation".
+- Route "escalation" ONLY for: explicit "I want to speak to a human/agent", serious anger/threats, legal threats.
+- "Am I speaking to a human/AI?" → route "general" (factual identity question, not an escalation request).
+- "How do I complain?" or "How do I make a complaint?" → route "general" (process question, not a complaint itself).
+- "Where are my documents?" or "How do I log in?" → route "general".
+- Dog damage, accidental breakage, liability questions → route "policy".
 - If unsure between two specialists, pick the more specific one.
 - Greetings and vague openers → route "general"."""
 
