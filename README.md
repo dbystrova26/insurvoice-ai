@@ -1,26 +1,50 @@
 # insurvoice-ai
 
-**AI voice agent for insurance customer service — a Parloa-style POC.**  
-Ironhack AI Consulting Bootcamp — Final Project  
-EU AI Act & GDPR compliant. Speech-to-text → AI reasoning → text-to-speech.
+**AI voice agent for insurance customer service.**  
+Ironhack AI Consulting Bootcamp — Final Project.  
+A multi-agent voice system: speech-to-text → routed reasoning → compliance check → text-to-speech. EU AI Act & GDPR compliant.
 
 ---
 
 ## What it is
 
-InsurVoice AI is a conversational **voice agent** that answers insurance customer calls autonomously. A caller speaks, the system transcribes it, an AI agent classifies intent and answers from a knowledge base, and the response is spoken back in a natural voice. It escalates to a human agent when needed.
+InsurVoice AI is a conversational **voice agent** that answers insurance customer calls autonomously. A caller speaks; the system transcribes the audio, a router delegates the question to a specialist agent, a compliance guard checks the reply, and the answer is spoken back in a natural voice. It hands off to a human agent the moment one is needed.
 
-**The voice pipeline:**
+**Use case:** Allianz Direct GmbH (fictional) — a mid-size direct insurer handling ~1,800 calls/day, 68% of them routine Tier-1 queries, at a ~EUR 2.1M annual contact-centre cost. Deflecting 60%+ of Tier-1 calls to the AI represents ~EUR 1.2M of annual value.
 
-```
-🎤 Caller speaks  →  📝 Whisper (STT)  →  🧠 Claude (reasoning + RAG)  →  🔊 ElevenLabs (TTS)  →  speaker
-                                                      ↓
-                                          ↪️ Escalate to human if needed
-```
+---
 
-**Inspired by:** [Parloa](https://parloa.com) — Berlin-based conversational voice AI (~$1B, Series B 2024). This POC demonstrates the same product category — voice-first customer service automation — using open tools.
+## System & Data Architecture
 
-**Use case:** Allianz Direct GmbH (fictional) — 1,800 calls/day, 68% Tier-1, EUR 2.1M contact centre cost. AI deflects 60%+ of Tier-1 → ~EUR 1.2M annual value.
+![InsurVoice architecture](architecture.png)
+
+**How a turn flows:**
+1. **Voice in** — the caller speaks (browser mic or phone) or uploads an audio file. Typed input always works as a fallback.
+2. **Whisper** transcribes the audio to text in real time.
+3. **Router agent** classifies the message and delegates to exactly one specialist — it triages, it does not answer.
+4. **Specialist agent** (Claims / Billing / Policy / General) answers using only the knowledge base via RAG — it cannot invent policy terms or amounts.
+5. **Escalation agent** takes over instead when a human is needed, producing the spoken handoff line and a written briefing for the agent (no personal identifiers in the log).
+6. **Compliance Guard** inspects every candidate reply against EU AI Act Art. 52 and GDPR — passing it through or rewriting it — *before anything is spoken to the caller*.
+7. **ElevenLabs** converts the approved reply to natural speech. The caller hears it.
+
+---
+
+## Multi-Agent Architecture
+
+InsurVoice is not a single agent — it is a coordinated **team of specialized subagents**:
+
+| Agent | Responsibility |
+|---|---|
+| **Router** | Triages each message; delegates to the right specialist. Does not answer. |
+| **Claims** | Filing claims, claim status, documents, timelines. |
+| **Billing** | Premiums, invoices, payments, price changes. |
+| **Policy** | Coverage, limits, renewals, cancellations. |
+| **General** | Greetings, opening hours, general info. |
+| **Escalation** | Human handoff line + a briefing that omits personal identifiers. |
+| **Compliance Guard** | Checks every reply — AI-identity, no binding decisions, no PII read-aloud, scope — fast deterministic rules first, LLM rewrite only if a flag fires. |
+| **Orchestrator** | Runs the pipeline, keeps conversation memory, returns an `agent_trace` the UI renders live. |
+
+Full detail in [`mvp/agents/ARCHITECTURE.md`](mvp/agents/ARCHITECTURE.md).
 
 ---
 
@@ -28,7 +52,7 @@ InsurVoice AI is a conversational **voice agent** that answers insurance custome
 
 🚀 **[Launch InsurVoice AI on Render](https://insurvoice-ai.onrender.com)** ← update after deploy
 
-*Enter your Anthropic, OpenAI, and ElevenLabs keys in the sidebar. First load ~30s (free tier wakes up).*
+*First load takes ~30s (free tier wakes up). Enter your three API keys in the sidebar.*
 
 ---
 
@@ -37,11 +61,12 @@ InsurVoice AI is a conversational **voice agent** that answers insurance custome
 | Layer | Tool |
 |---|---|
 | Speech-to-text | OpenAI Whisper (`whisper-1`) |
-| Reasoning | Anthropic Claude `claude-opus-4-6` |
+| Reasoning / agents | Anthropic Claude `claude-opus-4-6` |
 | Text-to-speech | ElevenLabs (`eleven_turbo_v2_5`) |
-| Knowledge | RAG over insurance FAQ base |
-| Frontend | Streamlit (mic + file upload + text input) |
-| Deploy | Render.com (free tier) |
+| Knowledge retrieval | RAG over insurance FAQ knowledge base |
+| Web interface | Flask + custom HTML (API keys server-side) |
+| Quick demo | Streamlit |
+| Deployment | Render.com (free tier) |
 | POC orchestration | Voiceflow + n8n (see `poc/`) |
 
 ---
@@ -50,26 +75,42 @@ InsurVoice AI is a conversational **voice agent** that answers insurance custome
 
 ```
 insurvoice-ai/
-├── use_case_definition.md          # Business problem + solution
-├── roi_risk_assessment.md          # ROI + 8-risk matrix
-├── strategic_plan.md               # Deployment + go-to-market
+├── architecture.png                # system & data architecture diagram
+├── banner.png                      # project banner
+├── use_case_definition.md          # business problem + proposed solution
+├── roi_risk_assessment.md          # ROI calculation + risk matrix
+├── strategic_plan.md               # deployment roadmap + go-to-market
 ├── poc/
 │   ├── poc_workflow.json           # n8n workflow (importable)
-│   └── poc_documentation.md        # POC walkthrough
+│   └── poc_documentation.md       # POC walkthrough + limitations
 ├── compliance/
-│   ├── eu_ai_act_compliance.md     # Classification + voice channel assessment
-│   └── gdpr_documentation.md       # Data flows, DPIA, voice biometric analysis
+│   ├── eu_ai_act_compliance.md    # risk classification + voice channel assessment
+│   └── gdpr_documentation.md      # data flows, DPIA, voice biometric analysis
 ├── mvp/
-│   ├── app.py                      # Streamlit voice app
-│   ├── voice.py                    # Whisper STT + ElevenLabs TTS
-│   ├── agent.py                    # InsurVoice agent logic
-│   ├── knowledge.py                # KB retrieval
-│   ├── download_data.py            # Data setup (run once)
+│   ├── agents/                    # the multi-agent system
+│   │   ├── __init__.py
+│   │   ├── orchestrator.py        # runs the full pipeline
+│   │   ├── router.py              # triage and delegation
+│   │   ├── specialists.py         # claims / billing / policy / general agents
+│   │   ├── escalation.py          # human handoff coordinator
+│   │   ├── compliance_guard.py    # EU AI Act + GDPR guardrail layer
+│   │   ├── base.py                # shared agent base class
+│   │   └── ARCHITECTURE.md        # architecture write-up and extension guide
+│   ├── voice.py                   # Whisper STT + ElevenLabs TTS
+│   ├── knowledge.py               # knowledge base retrieval (RAG)
+│   ├── app.py                     # Streamlit interface
+│   ├── agent.py                   # legacy single-agent (kept for reference)
+│   ├── download_data.py           # synthetic data setup (run once)
 │   ├── requirements.txt
-│   ├── render.yaml                 # One-click Render deploy
+│   ├── render.yaml
 │   ├── .env.example
-│   └── mvp_documentation.md
-├── .gitignore
+│   └── web/                       # Flask + HTML voice interface (recommended)
+│       ├── server.py              # Flask app — pipeline runs server-side
+│       ├── agents/                # agent package copy (required for Render deploy)
+│       ├── templates/index.html   # purple voice interface with trace panel
+│       ├── requirements.txt
+│       ├── render.yaml
+│       └── .env.example
 └── README.md
 ```
 
@@ -78,29 +119,41 @@ insurvoice-ai/
 ## Quick Start
 
 ```bash
-git clone https://github.com/YOUR-USERNAME/insurvoice-ai.git
+git clone https://github.com/dbystrova26/insurvoice-ai.git
+cd insurvoice-ai/mvp/web
+pip install -r requirements.txt
+cp .env.example .env           # add ANTHROPIC_API_KEY, OPENAI_API_KEY, ELEVENLABS_API_KEY
+python download_data.py
+python server.py               # opens at http://localhost:5000
+```
+
+**Or use the Streamlit version:**
+```bash
 cd insurvoice-ai/mvp
 pip install -r requirements.txt
-cp .env.example .env          # add ANTHROPIC_API_KEY, OPENAI_API_KEY, ELEVENLABS_API_KEY
+cp .env.example .env
 python download_data.py
 streamlit run app.py
 ```
 
+## Deploy to Render (free, public URL)
+
+1. Push this repo to GitHub.
+2. Render → New → Web Service → connect the repo.
+3. Set **Root Directory** to `mvp/web`.
+4. Add three env vars: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `ELEVENLABS_API_KEY`.
+5. Render reads `render.yaml` and configures build + start automatically.
+6. The mic works on the deployed URL — Render provides HTTPS.
+
 ---
 
-## Compliance Highlights
+## Compliance
 
 | Regulation | Status |
 |---|---|
-| EU AI Act | ✅ Limited Risk (Art. 52) — audible AI disclosure at call start |
-| GDPR | ✅ Voice transcribed then discarded; not stored. Voiceprint NOT used → not Art. 9 biometric data |
-| Voice-specific | ✅ DPIA covers audio-to-US-processor transfer; self-hosted Whisper recommended for production |
-
----
-
-## Why Voice (vs the chat version)
-
-Voice is Parloa's actual product. A voice demo shows the full **speech-to-text → reasoning → text-to-speech** loop that defines the conversational voice AI category. The chat version is simpler but doesn't demonstrate the capability that makes this market interesting.
+| EU AI Act | ✅ Limited Risk (Art. 52) — audible AI disclosure at call start; enforced at runtime by the Compliance Guard |
+| GDPR | ✅ Voice transcribed then discarded; not stored. Voiceprint not used → not Art. 9 biometric data |
+| Data handling | ✅ API keys server-side only; conversation logs hold intent labels, not message content |
 
 ---
 
@@ -108,43 +161,4 @@ Voice is Parloa's actual product. A voice demo shows the full **speech-to-text �
 
 **Daria Bystrova** · Ironhack AI Consulting Bootcamp · 2025
 
-*Student project / proof of concept. Not affiliated with Allianz, Parloa, OpenAI, Anthropic, or ElevenLabs.*
-
----
-
-
-
-## Multi-Agent Architecture
-
-InsurVoice is not one agent — it's a **team of specialized subagents** coordinated by an orchestrator:
-
-```
-Router → { Claims | Billing | Policy | General | Escalation } → ComplianceGuard → spoken reply
-```
-
-- **Router** triages each call and delegates to the right specialist
-- **Specialist agents** answer within their domain, each with isolated context
-- **Escalation agent** produces the human handoff + briefing
-- **Compliance Guard** checks every reply against the EU AI Act (Art. 52) and GDPR *before* it's spoken — fast deterministic rules first, LLM rewrite only if a flag fires
-
-The web interface shows this pipeline live as a "Multi-agent pipeline" trace on every turn.
-Full detail in [`mvp/agents/ARCHITECTURE.md`](mvp/agents/ARCHITECTURE.md).
-
-## Two interface options
-
-This repo ships **two** ways to run InsurVoice — pick one:
-
-### Option A — Streamlit app (`mvp/app.py`)
-Fastest to run. Single Python file, built-in dashboard. Good for quick demos.
-```bash
-cd mvp && streamlit run app.py
-```
-
-### Option B — Custom web interface (`mvp/web/`)  ⭐ recommended for deployment
-A polished Flask + HTML interface with an enterprise conversational-AI look:
-deep-violet theme, layered-lens logo, **Speak mode** (live mic) and **Upload mode**.
-API keys stay server-side (safer). Deploys cleanly to Render.
-```bash
-cd mvp/web && python server.py        # local at http://localhost:5000
-```
-Deploy: point Render at `mvp/web` (the `render.yaml` there handles the rest).
+*Student project / proof of concept. Allianz Direct is a fictional scenario. Not affiliated with OpenAI, Anthropic, or ElevenLabs.*
