@@ -9,7 +9,7 @@
   :root {
     --void:#0B0614;--deep:#1A0F2E;--violet:#6D4AFF;--vbright:#8B6FFF;
     --lilac:#C7B8FF;--mist:#E8E3F5;--muted:#9488B0;--line:rgba(199,184,255,0.14);
-    --panel:rgba(255,255,255,0.03);--card:#140C24;--success:#4ADE80;--warn:#FFB951;
+    --panel:rgba(255,255,255,0.03);--success:#4ADE80;--warn:#FFB951;
   }
   *{margin:0;padding:0;box-sizing:border-box}
   body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
@@ -30,19 +30,16 @@
   .mark{width:36px;height:36px;position:relative;flex-shrink:0}
   .mark span{position:absolute;border-radius:50%;border:2px solid var(--violet);
     top:0;left:0;width:36px;height:36px}
-  .mark span:nth-child(2){transform:translateX(8px) scale(.82);
-    border-color:var(--vbright);opacity:.7}
-  .mark span:nth-child(3){transform:translateX(16px) scale(.64);
-    border-color:var(--lilac);opacity:.5}
+  .mark span:nth-child(2){transform:translateX(8px) scale(.82);border-color:var(--vbright);opacity:.7}
+  .mark span:nth-child(3){transform:translateX(16px) scale(.64);border-color:var(--lilac);opacity:.5}
   .brand-name{font-size:18px;font-weight:700;letter-spacing:-.02em}
   .brand-name b{color:var(--vbright)}
   .status-pill{display:flex;align-items:center;gap:7px;background:var(--panel);
     border:1px solid var(--line);border-radius:20px;padding:6px 14px;font-size:12px;color:var(--muted)}
   .dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
   .dot.live{background:var(--success);box-shadow:0 0 8px var(--success)}
-  .dot.hearing{background:var(--vbright);box-shadow:0 0 8px var(--vbright);
-    animation:pulse-dot 1s infinite}
-  @keyframes pulse-dot{0%,100%{opacity:1}50%{opacity:.4}}
+  .dot.hearing{background:var(--vbright);box-shadow:0 0 8px var(--vbright);animation:pdot 1s infinite}
+  @keyframes pdot{0%,100%{opacity:1}50%{opacity:.4}}
 
   /* Hero */
   .eyebrow{font-size:11px;letter-spacing:.18em;text-transform:uppercase;
@@ -53,14 +50,13 @@
     -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
   .sub{font-size:15px;color:var(--muted);max-width:540px;line-height:1.6;margin-bottom:28px}
 
-  /* Live orb — the new primary control */
+  /* Orb */
   .orb-wrap{display:flex;flex-direction:column;align-items:center;margin:8px 0 24px}
   .orb{width:120px;height:120px;border-radius:50%;border:none;cursor:pointer;
     background:var(--violet);display:flex;align-items:center;justify-content:center;
-    transition:transform .2s,background .3s;
-    box-shadow:0 0 0 0 rgba(109,74,255,.5)}
+    transition:transform .2s,background .3s;box-shadow:0 0 0 0 rgba(109,74,255,.5)}
   .orb:hover{transform:scale(1.04)}
-  .orb svg{width:44px;height:44px;fill:#fff;transition:transform .2s}
+  .orb svg{width:44px;height:44px;fill:#fff}
   .orb.hearing{background:#4ADE80;animation:orb-pulse 1.2s infinite;
     box-shadow:0 0 32px rgba(74,222,128,.4)}
   .orb.processing{background:var(--vbright);cursor:default}
@@ -71,18 +67,17 @@
   .orb-label{margin-top:14px;font-size:15px;font-weight:600;color:var(--mist)}
   .orb-hint{margin-top:5px;font-size:12px;color:var(--muted)}
 
-  /* Partial transcript — "hearing: ..." */
+  /* Hearing bar */
   .hearing-bar{background:rgba(74,222,128,.07);border:1px solid rgba(74,222,128,.2);
     border-radius:10px;padding:10px 16px;font-size:13px;color:#4ADE80;
     min-height:38px;margin-bottom:14px;display:none}
   .hearing-bar.active{display:block}
 
-  /* Input fallbacks */
+  /* Fallbacks */
   .fallbacks{display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap}
   .upload-btn{background:var(--panel);border:1px solid var(--line);color:var(--muted);
     font-family:inherit;font-size:13px;font-weight:600;padding:10px 18px;
-    border-radius:10px;cursor:pointer;display:flex;align-items:center;gap:7px;
-    transition:all .2s}
+    border-radius:10px;cursor:pointer;display:flex;align-items:center;gap:7px;transition:all .2s}
   .upload-btn:hover{border-color:var(--violet);color:var(--mist)}
   .upload-btn input{display:none}
   .text-row{display:flex;gap:10px;flex:1;min-width:220px}
@@ -101,8 +96,7 @@
   .tts-toggle{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);cursor:pointer}
   .tts-toggle input{accent-color:var(--violet);width:15px;height:15px}
   .reset-btn{background:transparent;border:1px solid var(--line);color:var(--muted);
-    font-family:inherit;font-size:12px;padding:6px 13px;border-radius:8px;cursor:pointer;
-    transition:all .2s}
+    font-family:inherit;font-size:12px;padding:6px 13px;border-radius:8px;cursor:pointer;transition:all .2s}
   .reset-btn:hover{border-color:var(--violet);color:var(--mist)}
 
   /* Messages */
@@ -110,8 +104,7 @@
   .msg{max-width:82%;padding:13px 17px;border-radius:15px;font-size:14px;
     line-height:1.55;animation:rise .3s ease}
   @keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-  .msg.user{align-self:flex-end;background:var(--violet);color:#fff;
-    border-bottom-right-radius:4px}
+  .msg.user{align-self:flex-end;background:var(--violet);color:#fff;border-bottom-right-radius:4px}
   .msg.bot{align-self:flex-start;background:var(--panel);border:1px solid var(--line);
     border-bottom-left-radius:4px}
   .msg.bot .tag{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.1em;
@@ -121,8 +114,7 @@
   .msg audio{width:100%;margin-top:9px;height:34px}
   .thinking{align-self:flex-start;color:var(--muted);font-size:13px;
     display:flex;align-items:center;gap:7px;padding:6px 0}
-  .blip{width:6px;height:6px;border-radius:50%;background:var(--vbright);
-    animation:blink 1.2s infinite}
+  .blip{width:6px;height:6px;border-radius:50%;background:var(--vbright);animation:blink 1.2s infinite}
   .blip:nth-child(2){animation-delay:.2s}
   .blip:nth-child(3){animation-delay:.4s}
   @keyframes blink{0%,60%,100%{opacity:.3}30%{opacity:1}}
@@ -137,7 +129,7 @@
   .trace-step .act{color:var(--vbright);font-weight:600}
   .trace-step .det{color:var(--muted);font-size:11px}
 
-  /* Compliance pills */
+  /* Compliance */
   .compliance{margin-top:20px;display:flex;flex-wrap:wrap;gap:8px}
   .pill{background:var(--panel);border:1px solid var(--line);border-radius:20px;
     padding:5px 12px;font-size:11px;color:var(--muted)}
@@ -145,7 +137,6 @@
 
   .err{color:#FF6B8A;font-size:13px;text-align:center;padding:8px;display:none}
   .err.show{display:block}
-  .hidden{display:none!important}
 </style>
 </head>
 <body>
@@ -165,11 +156,10 @@
 
   <div class="eyebrow">Multi-Agent Conversational Voice AI · Insurance</div>
   <h1>Talk to your insurer.<br><span class="em">Get answers in seconds.</span></h1>
-  <p class="sub">A multi-agent voice system — speak naturally, get answers in voice.
-    A router delegates each question to a specialist agent; a compliance guard checks
-    every reply before it's spoken.</p>
+  <p class="sub">Speak naturally — the agent hears you, routes your question to a specialist,
+    checks the reply, and speaks back. No buttons. No waiting.</p>
 
-  <!-- LIVE ORB — primary input -->
+  <!-- Orb -->
   <div class="orb-wrap">
     <button class="orb" id="orb" onclick="toggleLive()" aria-label="Start listening">
       <svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 003-3V5a3 3 0 00-6 0v6a3 3 0 003 3zm5-3a5 5 0 01-10 0H5a7 7 0 006 6.92V21h2v-3.08A7 7 0 0019 11h-2z"/></svg>
@@ -178,7 +168,7 @@
     <div class="orb-hint" id="orbHint">Live voice · speaks back automatically</div>
   </div>
 
-  <!-- Partial transcript bar — shows "hearing: ..." while you speak -->
+  <!-- Partial transcript -->
   <div class="hearing-bar" id="hearingBar">🎤 Hearing: <span id="partialTxt"></span></div>
 
   <!-- Fallbacks -->
@@ -215,7 +205,6 @@
 </div>
 
 <script>
-  // ── State ─────────────────────────────────────────────────────────────────
   let socket = null;
   let mediaStream = null;
   let processor = null;
@@ -223,31 +212,40 @@
   let isLive = false;
   let deepgramAvailable = false;
 
-  // ── Socket.IO connection ──────────────────────────────────────────────────
+  // AudioWorklet code — converts float32 mic input to int16 PCM for Deepgram
+  const WORKLET = `
+    class PcmProcessor extends AudioWorkletProcessor {
+      process(inputs) {
+        const ch = inputs[0][0];
+        if (!ch) return true;
+        const pcm = new Int16Array(ch.length);
+        for (let i = 0; i < ch.length; i++) {
+          pcm[i] = Math.max(-32768, Math.min(32767, ch[i] * 32768));
+        }
+        this.port.postMessage(pcm.buffer, [pcm.buffer]);
+        return true;
+      }
+    }
+    registerProcessor("pcm-processor", PcmProcessor);
+  `;
+
   function initSocket() {
     socket = io();
-    socket.on("connect", () => {});
-
     socket.on("connected", d => {
       deepgramAvailable = d.deepgram_available;
-      setStatus(d.deepgram_available ? "live" : "ready", d.deepgram_available ? "Live STT ready" : "Text mode (no Deepgram key)");
+      setStatus(d.deepgram_available ? "live" : "ready",
+                d.deepgram_available ? "Live STT ready" : "Text mode (no Deepgram key)");
     });
-
-    socket.on("stream_ready", () => {
-      setOrbState("hearing");
-    });
-
+    socket.on("stream_ready", () => setOrbState("hearing"));
     socket.on("partial_transcript", d => {
       document.getElementById("partialTxt").textContent = d.text;
       document.getElementById("hearingBar").classList.add("active");
     });
-
     socket.on("transcript", d => {
       document.getElementById("hearingBar").classList.remove("active");
       addMsg("user", d.text);
       showThinking();
     });
-
     socket.on("reply", d => {
       hideThinking();
       if (d.agent_trace && d.agent_trace.length) renderTrace(d.agent_trace);
@@ -255,12 +253,10 @@
       if (d.escalated) addMsg("escalation",
         "Transferring to a colleague." + (d.handoff_summary ? " Briefing: " + d.handoff_summary : ""));
     });
-
     socket.on("stream_error", d => showErr(d.error));
     socket.on("disconnect", () => setStatus("offline", "Offline"));
   }
 
-  // ── Live mic toggle ───────────────────────────────────────────────────────
   async function toggleLive() {
     if (!deepgramAvailable) {
       showErr("No Deepgram key on server — use the text box or file upload.");
@@ -268,25 +264,32 @@
     }
     if (isLive) { stopLive(); return; }
     try {
-      mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Echo cancellation prevents the mic picking up the speaker output
+      mediaStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
       audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
       await audioCtx.resume();
       const source = audioCtx.createMediaStreamSource(mediaStream);
-      await audioCtx.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET_CODE], { type: "application/javascript" })));
+      const blob = new Blob([WORKLET], { type: "application/javascript" });
+      await audioCtx.audioWorklet.addModule(URL.createObjectURL(blob));
       processor = new AudioWorkletNode(audioCtx, "pcm-processor");
       processor.port.onmessage = e => {
         if (socket && isLive) socket.emit("audio_chunk", e.data);
       };
       source.connect(processor);
-      processor.connect(audioCtx.destination);
       isLive = true;
       socket.emit("start_stream");
       setOrbState("hearing");
       document.getElementById("orbLabel").textContent = "Listening — tap to stop";
       document.getElementById("orbHint").textContent = "Speak naturally, it replies automatically";
-      setStatus("live", "Hearing you…");
+      setStatus("hearing", "Hearing you…");
     } catch (e) {
-      showErr("Mic not available: " + e.message + ". Use the text box below.");
+      showErr("Mic not available: " + e.message + ". Use the text box instead.");
     }
   }
 
@@ -303,24 +306,6 @@
     setStatus("live", "Live STT ready");
   }
 
-  // AudioWorklet — converts mic float32 → int16 PCM for Deepgram
-  const WORKLET_CODE = `
-    class PcmProcessor extends AudioWorkletProcessor {
-      process(inputs) {
-        const ch = inputs[0][0];
-        if (!ch) return true;
-        const pcm = new Int16Array(ch.length);
-        for (let i = 0; i < ch.length; i++) {
-          pcm[i] = Math.max(-32768, Math.min(32767, ch[i] * 32768));
-        }
-        this.port.postMessage(pcm.buffer, [pcm.buffer]);
-        return true;
-      }
-    }
-    registerProcessor("pcm-processor", PcmProcessor);
-  `;
-
-  // ── File upload ───────────────────────────────────────────────────────────
   async function uploadFile(file) {
     if (!file) return;
     addMsg("user", "🎤 " + file.name);
@@ -339,7 +324,6 @@
     } catch(e) { hideThinking(); showErr("Upload failed: " + e.message); }
   }
 
-  // ── Text input ────────────────────────────────────────────────────────────
   async function sendText() {
     const input = document.getElementById("textIn");
     const text = input.value.trim();
@@ -359,7 +343,6 @@
     } catch(e) { hideThinking(); showErr("Error: " + e.message); }
   }
 
-  // ── Render helpers ────────────────────────────────────────────────────────
   function renderReply(d) {
     if (d.agent_trace && d.agent_trace.length) renderTrace(d.agent_trace);
     addMsg("bot", d.reply, d.intent, d.audio_base64);
@@ -391,7 +374,7 @@
     d.className = "trace";
     let h = '<div class="trace-title">&#9881; Multi-agent pipeline</div>';
     trace.forEach(s => {
-      h += `<div class="trace-step"><span class="ag">${esc(s.agent)}</span><span class="act">${esc(s.action)}</span>${s.detail ? `<span class="det">— ${esc(s.detail)}</span>` : ""}</div>`;
+      h += `<div class="trace-step"><span class="ag">${esc(s.agent)}</span><span class="act">${esc(s.action)}</span>${s.detail?`<span class="det">— ${esc(s.detail)}</span>`:""}</div>`;
     });
     d.innerHTML = h;
     c.appendChild(d);
@@ -407,26 +390,21 @@
   }
   function hideThinking() { const t = document.getElementById("thinking"); if(t) t.remove(); }
 
-  function setOrbState(state) {
-    const o = document.getElementById("orb");
-    o.className = "orb" + (state === "hearing" ? " hearing" : state === "processing" ? " processing" : "");
+  function setOrbState(s) {
+    document.getElementById("orb").className = "orb" +
+      (s==="hearing"?" hearing":s==="processing"?" processing":"");
   }
-
-  function setStatus(state, txt) {
-    const dot = document.getElementById("dot");
-    dot.className = "dot" + (state === "live" ? " live" : state === "hearing" ? " hearing" : "");
+  function setStatus(s, txt) {
+    document.getElementById("dot").className = "dot" +
+      (s==="live"?" live":s==="hearing"?" hearing":"");
     document.getElementById("statusTxt").textContent = txt;
   }
-
   function showErr(msg) {
     const b = document.getElementById("errBox");
     b.textContent = msg; b.classList.add("show");
     setTimeout(() => b.classList.remove("show"), 7000);
   }
-
-  function esc(s) {
-    const d = document.createElement("div"); d.textContent = s; return d.innerHTML;
-  }
+  function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
 
   async function resetCall() {
     stopLive();
@@ -435,12 +413,10 @@
     document.getElementById("hearingBar").classList.remove("active");
   }
 
-  // Health check to show which keys are active
   fetch("/api/health").then(r => r.json()).then(d => {
     if (!d.anthropic) showErr("Missing ANTHROPIC_API_KEY on server");
   }).catch(() => {});
 
-  // Init socket on page load
   initSocket();
 </script>
 </body>
