@@ -56,7 +56,12 @@ def _get_agent(sid: str) -> Orchestrator:
 
 def _run_turn(sid: str, transcript: str, socket_id: str):
     """Run a full agent turn and emit the result back to the browser."""
-    if not transcript.strip():
+    transcript = transcript.strip()
+    # Ignore empty or very short transcripts (noise, breathing, background sounds)
+    if not transcript or len(transcript) < 4:
+        return
+    # Ignore transcripts that look like technical artifacts not real speech
+    if transcript.lower() in {"the", "a", "uh", "um", "hmm", "oh", "ah"}:
         return
     socketio.emit("transcript", {"text": transcript}, room=socket_id)
     agent = _get_agent(sid)
