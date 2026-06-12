@@ -1,6 +1,6 @@
 # insurvoice-ai
 
-**AI voice agent for insurance customer service.**  
+**AI voice agent for insurance customer service — a Parloa-style POC.**  
 Ironhack AI Consulting Bootcamp — Final Project  
 EU AI Act & GDPR compliant. Speech-to-text → AI reasoning → text-to-speech.
 
@@ -109,3 +109,42 @@ Voice is Parloa's actual product. A voice demo shows the full **speech-to-text �
 **Daria Bystrova** · Ironhack AI Consulting Bootcamp · 2025
 
 *Student project / proof of concept. Not affiliated with Allianz, Parloa, OpenAI, Anthropic, or ElevenLabs.*
+
+---
+
+
+
+## Multi-Agent Architecture
+
+InsurVoice is not one agent — it's a **team of specialized subagents** coordinated by an orchestrator:
+
+```
+Router → { Claims | Billing | Policy | General | Escalation } → ComplianceGuard → spoken reply
+```
+
+- **Router** triages each call and delegates to the right specialist
+- **Specialist agents** answer within their domain, each with isolated context
+- **Escalation agent** produces the human handoff + briefing
+- **Compliance Guard** checks every reply against the EU AI Act (Art. 52) and GDPR *before* it's spoken — fast deterministic rules first, LLM rewrite only if a flag fires
+
+The web interface shows this pipeline live as a "Multi-agent pipeline" trace on every turn.
+Full detail in [`mvp/agents/ARCHITECTURE.md`](mvp/agents/ARCHITECTURE.md).
+
+## Two interface options
+
+This repo ships **two** ways to run InsurVoice — pick one:
+
+### Option A — Streamlit app (`mvp/app.py`)
+Fastest to run. Single Python file, built-in dashboard. Good for quick demos.
+```bash
+cd mvp && streamlit run app.py
+```
+
+### Option B — Custom web interface (`mvp/web/`)  ⭐ recommended for deployment
+A polished Flask + HTML interface with an enterprise conversational-AI look:
+deep-violet theme, layered-lens logo, **Speak mode** (live mic) and **Upload mode**.
+API keys stay server-side (safer). Deploys cleanly to Render.
+```bash
+cd mvp/web && python server.py        # local at http://localhost:5000
+```
+Deploy: point Render at `mvp/web` (the `render.yaml` there handles the rest).

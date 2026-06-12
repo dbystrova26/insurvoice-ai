@@ -184,6 +184,3 @@ class InsurVoiceAgent:
         self.turn_count = 0
         self.consecutive_failures = 0
         self.is_first_turn = True
-
-# NOTE: This single-agent module is superseded by the multi-agent system in agents/.
-# It is kept for reference. The app now uses agents/Orchestrator.
