@@ -1,6 +1,6 @@
 """
 stream.py — InsurVoice AI · Deepgram direct WebSocket STT
-Language detection done client-side via langdetect (free, no API needed).
+Language detection only on long non-ASCII text to avoid false positives.
 """
 
 import requests
@@ -10,10 +10,22 @@ import time
 
 
 def detect_language(text: str) -> str:
-    """Detect language from transcript text. Falls back to 'en'."""
+    """
+    Detect language only when text is long enough and contains non-ASCII chars.
+    Short or pure-ASCII text defaults to English to avoid false positives.
+    """
+    if not text or len(text) < 20:
+        return "en"
+    # Pure ASCII = almost certainly English (no umlauts, accents etc.)
+    if all(ord(c) < 128 for c in text):
+        return "en"
     try:
         from langdetect import detect
-        return detect(text)
+        lang = detect(text)
+        # Only trust languages we explicitly support
+        if lang in {"de", "es", "fr", "it", "nl", "pt", "pl"}:
+            return lang
+        return "en"
     except Exception:
         return "en"
 
@@ -25,7 +37,7 @@ def transcribe_chunk(audio_bytes: bytes, api_key: str) -> dict:
         return {"success": False, "text": "", "language": "en", "error": "Audio too short"}
     try:
         r = requests.post(
-            "https://api.deepgram.com/v1/listen?model=nova-2&punctuate=true",
+            "https://api.deepgram.com/v1/listen?model=nova-2-general&punctuate=true",
             headers={"Authorization": f"Token {api_key}", "Content-Type": "audio/webm"},
             data=audio_bytes, timeout=30,
         )
@@ -47,9 +59,10 @@ transcribe_streaming_chunk = transcribe_chunk
 
 
 class DeepgramStreamSession:
+    # nova-2-general handles multiple languages including German, Spanish, French
     WS_URL = (
         "wss://api.deepgram.com/v1/listen"
-        "?model=nova-2&encoding=linear16&sample_rate=16000"
+        "?model=nova-2-general&encoding=linear16&sample_rate=16000"
         "&channels=1&punctuate=true&interim_results=true&endpointing=600"
     )
 
@@ -61,8 +74,8 @@ class DeepgramStreamSession:
         self._audio_queue = []
         self._lock = threading.Lock()
         self._started = threading.Event()
-        self._last_final = ""      # debounce: track last processed transcript
-        self._last_final_time = 0  # debounce: track when it was processed
+        self._last_final = ""
+        self._last_final_time = 0
 
     def start(self):
         self._running = True
@@ -89,12 +102,9 @@ class DeepgramStreamSession:
         return chunks
 
     def _is_duplicate(self, text: str) -> bool:
-        """Return True if this transcript is a duplicate of the last one."""
         now = time.time()
-        # Same text within 3 seconds = duplicate
         if text == self._last_final and (now - self._last_final_time) < 3.0:
             return True
-        # Very similar text (one is substring of other) within 2 seconds
         if (now - self._last_final_time) < 2.0:
             a, b = text.lower(), self._last_final.lower()
             if a in b or b in a:
@@ -138,7 +148,6 @@ class DeepgramStreamSession:
                                     is_final = data.get("is_final", False)
                                     if text and len(text) >= 3:
                                         if is_final:
-                                            # Deduplicate
                                             if self._is_duplicate(text):
                                                 continue
                                             self._last_final = text

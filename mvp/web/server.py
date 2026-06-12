@@ -1,23 +1,11 @@
 """
 server.py — InsurVoice AI · Flask + SocketIO server
------------------------------------------------------
-Serves the voice interface and runs the full pipeline server-side.
-
-Two STT modes:
-  LIVE  — Deepgram WebSocket streaming (phone-call feel, no button press)
-  BATCH — Deepgram REST or Whisper (fallback for file uploads)
-
-Pipeline per turn:
-  Browser mic audio → Deepgram (live STT) → Router → Specialist → ComplianceGuard
-  → ElevenLabs (TTS) → audio back to browser → plays automatically
-
-Run locally:  python server.py
-Deploy:       gunicorn with eventlet (see render.yaml)
 """
 
 import os
 import base64
 import uuid
+import time
 from flask import Flask, request, jsonify, render_template, session
 from flask_socketio import SocketIO, emit, join_room
 from dotenv import load_dotenv
@@ -40,6 +28,7 @@ VOICE_ID       = os.getenv("ELEVENLABS_VOICE_ID", DEFAULT_VOICE_ID)
 
 _agents: dict[str, Orchestrator] = {}
 _streams: dict[str, DeepgramStreamSession] = {}
+_last_turn: dict[str, tuple] = {}  # sid -> (transcript, timestamp) for dedup
 
 
 def _sid() -> str:
@@ -55,46 +44,41 @@ def _get_agent(sid: str) -> Orchestrator:
 
 
 def _run_turn(sid: str, transcript: str, socket_id: str, language: str = "en"):
-    """Run a full agent turn and emit the result back to the browser."""
+    """Run one agent turn. Deduplicated — ignores repeats within 4 seconds."""
     transcript = transcript.strip()
     if not transcript or len(transcript) < 4:
         return
     if transcript.lower() in {"the", "a", "uh", "um", "hmm", "oh", "ah"}:
         return
+
+    # Deduplication: drop if same/similar transcript fired within 4 seconds
+    now = time.time()
+    last_text, last_time = _last_turn.get(sid, ("", 0))
+    if (now - last_time) < 4.0:
+        if transcript == last_text:
+            return
+        # Also drop if one is a substring of the other
+        if transcript.lower() in last_text.lower() or last_text.lower() in transcript.lower():
+            return
+    _last_turn[sid] = (transcript, now)
+
     socketio.emit("transcript", {"text": transcript, "language": language}, room=socket_id)
+
     agent = _get_agent(sid)
-    # Pass detected language so agent replies in same language
     result = agent.respond(transcript, language=language)
+
     audio_b64 = None
     if ELEVENLABS_KEY:
         tts = synthesize_elevenlabs(result["response"], ELEVENLABS_KEY, VOICE_ID)
         if tts["success"]:
             audio_b64 = base64.b64encode(tts["audio"]).decode()
+
     socketio.emit("reply", {
         "transcript": transcript,
         "reply": result["response"],
         "intent": result.get("intent", ""),
         "route": result.get("route", ""),
         "language": language,
-        "escalated": result.get("should_escalate", False),
-        "handoff_summary": result.get("handoff_summary"),
-        "agent_trace": result.get("agent_trace", []),
-        "compliance": result.get("compliance", {}),
-        "audio_base64": audio_b64,
-    }, room=socket_id)
-    socketio.emit("transcript", {"text": transcript}, room=socket_id)
-    agent = _get_agent(sid)
-    result = agent.respond(transcript)
-    audio_b64 = None
-    if ELEVENLABS_KEY:
-        tts = synthesize_elevenlabs(result["response"], ELEVENLABS_KEY, VOICE_ID)
-        if tts["success"]:
-            audio_b64 = base64.b64encode(tts["audio"]).decode()
-    socketio.emit("reply", {
-        "transcript": transcript,
-        "reply": result["response"],
-        "intent": result.get("intent", ""),
-        "route": result.get("route", ""),
         "escalated": result.get("should_escalate", False),
         "handoff_summary": result.get("handoff_summary"),
         "agent_trace": result.get("agent_trace", []),
@@ -124,6 +108,7 @@ def reset():
     sid = _sid()
     if sid in _agents:
         _agents[sid].reset()
+    _last_turn.pop(sid, None)
     return jsonify({"status": "reset"})
 
 
@@ -171,7 +156,8 @@ def handle_upload():
     if not stt["success"]:
         return jsonify({"error": stt["error"]}), 502
     agent = _get_agent(_sid())
-    result = agent.respond(stt["text"])
+    lang = stt.get("language", "en")
+    result = agent.respond(stt["text"], language=lang)
     audio_b64 = None
     if ELEVENLABS_KEY:
         tts = synthesize_elevenlabs(result["response"], ELEVENLABS_KEY, VOICE_ID)
@@ -189,8 +175,6 @@ def handle_upload():
         "audio_base64": audio_b64,
     })
 
-
-# ── SocketIO live streaming ───────────────────────────────────────────────────
 
 @socketio.on("connect")
 def on_connect():
@@ -236,15 +220,13 @@ def on_audio_chunk(data):
 
 @socketio.on("resume_stream")
 def on_resume_stream():
-    """Resume listening after TTS finishes — reuse existing stream if alive."""
+    """Resume listening after TTS — reuse existing stream if still alive."""
     sid = _sid()
-    socket_id = request.sid
-    # If stream is still alive, just keep it running — no need to restart
     if sid in _streams and _streams[sid].is_alive():
-        return
-    # Stream died — restart it
+        return  # still running, nothing to do
     if not DEEPGRAM_KEY:
         return
+    socket_id = request.sid
 
     def on_transcript(text: str, is_final: bool, language: str = "en"):
         if is_final:
