@@ -3,502 +3,445 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>InsurVoice AI — Voice Agent</title>
+<title>InsurVoice AI</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
 <style>
-  /* ============================================================
-     InsurVoice AI — original design in the enterprise conversational-AI
-     idiom (deep violet, layered lens geometry, bold grotesk type).
-     Not affiliated with or copied from any specific company's brand.
-     ============================================================ */
-
   :root {
-    --void: #0B0614;          /* near-black violet background */
-    --deep: #1A0F2E;          /* deep panel */
-    --violet: #6D4AFF;        /* primary brand violet */
-    --violet-bright: #8B6FFF; /* hover / accent */
-    --lilac: #C7B8FF;         /* soft text accent */
-    --mist: #E8E3F5;          /* primary text */
-    --muted: #9488B0;         /* secondary text */
-    --line: rgba(199,184,255,0.14);
-    --glow: rgba(109,74,255,0.45);
-    --success: #4ADE80;
-    --warn: #FFB951;
-    --panel: rgba(255,255,255,0.03);
+    --void:#0B0614;--deep:#1A0F2E;--violet:#6D4AFF;--vbright:#8B6FFF;
+    --lilac:#C7B8FF;--mist:#E8E3F5;--muted:#9488B0;--line:rgba(199,184,255,0.14);
+    --panel:rgba(255,255,255,0.03);--card:#140C24;--success:#4ADE80;--warn:#FFB951;
   }
-
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-
-  body {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-    background: var(--void);
-    color: var(--mist);
-    min-height: 100vh;
-    overflow-x: hidden;
-    position: relative;
-  }
-
-  /* Ambient layered-lens background — the signature visual */
-  .ambient {
-    position: fixed; inset: 0; z-index: 0; pointer-events: none;
-    overflow: hidden;
-  }
-  .lens {
-    position: absolute; border-radius: 50%;
-    border: 1px solid var(--line);
-    opacity: 0.6;
-  }
-  .lens.l1 { width: 680px; height: 680px; top: -200px; right: -160px;
-    background: radial-gradient(circle at 30% 30%, rgba(109,74,255,0.16), transparent 60%); }
-  .lens.l2 { width: 480px; height: 480px; top: -90px; right: 40px;
-    background: radial-gradient(circle at 40% 40%, rgba(139,111,255,0.10), transparent 65%); }
-  .lens.l3 { width: 520px; height: 520px; bottom: -220px; left: -120px;
-    background: radial-gradient(circle at 60% 40%, rgba(109,74,255,0.12), transparent 60%); }
-
-  .wrap { position: relative; z-index: 1; max-width: 880px; margin: 0 auto;
-    padding: 32px 24px 80px; }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+    background:var(--void);color:var(--mist);min-height:100vh;overflow-x:hidden}
+  .ambient{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+  .lens{position:absolute;border-radius:50%;border:1px solid var(--line)}
+  .l1{width:680px;height:680px;top:-200px;right:-160px;
+    background:radial-gradient(circle at 30% 30%,rgba(109,74,255,.16),transparent 60%)}
+  .l2{width:480px;height:480px;top:-90px;right:40px;
+    background:radial-gradient(circle at 40% 40%,rgba(139,111,255,.10),transparent 65%)}
+  .l3{width:520px;height:520px;bottom:-220px;left:-120px;
+    background:radial-gradient(circle at 60% 40%,rgba(109,74,255,.12),transparent 60%)}
+  .wrap{position:relative;z-index:1;max-width:880px;margin:0 auto;padding:28px 24px 80px}
 
   /* Header */
-  header { display: flex; align-items: center; justify-content: space-between;
-    padding-bottom: 28px; }
-  .brand { display: flex; align-items: center; gap: 12px; }
-  .mark {
-    width: 38px; height: 38px; position: relative; flex-shrink: 0;
-  }
-  .mark span {
-    position: absolute; border-radius: 50%;
-    border: 2px solid var(--violet); top: 0; left: 0;
-    width: 38px; height: 38px;
-  }
-  .mark span:nth-child(2) { transform: translateX(9px) scale(0.82);
-    border-color: var(--violet-bright); opacity: 0.7; }
-  .mark span:nth-child(3) { transform: translateX(18px) scale(0.64);
-    border-color: var(--lilac); opacity: 0.5; }
-  .brand-name { font-size: 19px; font-weight: 700; letter-spacing: -0.02em; }
-  .brand-name b { color: var(--violet-bright); }
-  .status-dot { display: flex; align-items: center; gap: 8px; font-size: 12px;
-    color: var(--muted); }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
-  .dot.live { background: var(--success); box-shadow: 0 0 8px var(--success); }
+  header{display:flex;align-items:center;justify-content:space-between;padding-bottom:24px}
+  .brand{display:flex;align-items:center;gap:12px}
+  .mark{width:36px;height:36px;position:relative;flex-shrink:0}
+  .mark span{position:absolute;border-radius:50%;border:2px solid var(--violet);
+    top:0;left:0;width:36px;height:36px}
+  .mark span:nth-child(2){transform:translateX(8px) scale(.82);
+    border-color:var(--vbright);opacity:.7}
+  .mark span:nth-child(3){transform:translateX(16px) scale(.64);
+    border-color:var(--lilac);opacity:.5}
+  .brand-name{font-size:18px;font-weight:700;letter-spacing:-.02em}
+  .brand-name b{color:var(--vbright)}
+  .status-pill{display:flex;align-items:center;gap:7px;background:var(--panel);
+    border:1px solid var(--line);border-radius:20px;padding:6px 14px;font-size:12px;color:var(--muted)}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+  .dot.live{background:var(--success);box-shadow:0 0 8px var(--success)}
+  .dot.hearing{background:var(--vbright);box-shadow:0 0 8px var(--vbright);
+    animation:pulse-dot 1s infinite}
+  @keyframes pulse-dot{0%,100%{opacity:1}50%{opacity:.4}}
 
   /* Hero */
-  .hero { padding: 24px 0 36px; }
-  .eyebrow { font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase;
-    color: var(--violet-bright); font-weight: 600; margin-bottom: 14px; }
-  h1 { font-size: clamp(30px, 5vw, 46px); font-weight: 800; line-height: 1.05;
-    letter-spacing: -0.03em; margin-bottom: 16px; }
-  h1 .em { color: var(--violet-bright);
-    background: linear-gradient(120deg, var(--violet-bright), var(--lilac));
-    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
-  .sub { font-size: 16px; color: var(--muted); max-width: 560px; line-height: 1.6; }
+  .eyebrow{font-size:11px;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--vbright);font-weight:600;margin-bottom:12px}
+  h1{font-size:clamp(28px,5vw,44px);font-weight:800;line-height:1.05;
+    letter-spacing:-.03em;margin-bottom:14px}
+  h1 .em{background:linear-gradient(120deg,var(--vbright),var(--lilac));
+    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .sub{font-size:15px;color:var(--muted);max-width:540px;line-height:1.6;margin-bottom:28px}
 
-  /* Mode toggle */
-  .modes { display: flex; gap: 6px; background: var(--panel); border: 1px solid var(--line);
-    border-radius: 14px; padding: 6px; margin: 28px 0 22px; width: fit-content; }
-  .mode-btn { background: transparent; border: none; color: var(--muted);
-    font-family: inherit; font-size: 14px; font-weight: 600; padding: 10px 22px;
-    border-radius: 9px; cursor: pointer; transition: all 0.2s; display: flex;
-    align-items: center; gap: 8px; }
-  .mode-btn.active { background: var(--violet); color: white;
-    box-shadow: 0 4px 16px var(--glow); }
-  .mode-btn:not(.active):hover { color: var(--mist); }
+  /* Live orb — the new primary control */
+  .orb-wrap{display:flex;flex-direction:column;align-items:center;margin:8px 0 24px}
+  .orb{width:120px;height:120px;border-radius:50%;border:none;cursor:pointer;
+    background:var(--violet);display:flex;align-items:center;justify-content:center;
+    transition:transform .2s,background .3s;
+    box-shadow:0 0 0 0 rgba(109,74,255,.5)}
+  .orb:hover{transform:scale(1.04)}
+  .orb svg{width:44px;height:44px;fill:#fff;transition:transform .2s}
+  .orb.hearing{background:#4ADE80;animation:orb-pulse 1.2s infinite;
+    box-shadow:0 0 32px rgba(74,222,128,.4)}
+  .orb.processing{background:var(--vbright);cursor:default}
+  @keyframes orb-pulse{
+    0%{box-shadow:0 0 0 0 rgba(74,222,128,.5)}
+    70%{box-shadow:0 0 0 28px rgba(74,222,128,0)}
+    100%{box-shadow:0 0 0 0 rgba(74,222,128,0)}}
+  .orb-label{margin-top:14px;font-size:15px;font-weight:600;color:var(--mist)}
+  .orb-hint{margin-top:5px;font-size:12px;color:var(--muted)}
 
-  /* Console panel */
-  .console { background: linear-gradient(180deg, var(--deep), rgba(26,15,46,0.5));
-    border: 1px solid var(--line); border-radius: 22px; padding: 32px;
-    min-height: 280px; }
+  /* Partial transcript — "hearing: ..." */
+  .hearing-bar{background:rgba(74,222,128,.07);border:1px solid rgba(74,222,128,.2);
+    border-radius:10px;padding:10px 16px;font-size:13px;color:#4ADE80;
+    min-height:38px;margin-bottom:14px;display:none}
+  .hearing-bar.active{display:block}
 
-  /* Speak mode */
-  .speak-stage { display: flex; flex-direction: column; align-items: center;
-    text-align: center; padding: 18px 0; }
-  .orb-btn {
-    width: 132px; height: 132px; border-radius: 50%; border: none; cursor: pointer;
-    position: relative; background: var(--violet);
-    box-shadow: 0 0 0 0 var(--glow); transition: transform 0.2s;
-    display: flex; align-items: center; justify-content: center;
-    margin-bottom: 22px;
-  }
-  .orb-btn:hover { transform: scale(1.04); }
-  .orb-btn:active { transform: scale(0.97); }
-  .orb-btn svg { width: 46px; height: 46px; fill: white; }
-  .orb-btn.recording { background: #E0407A; animation: pulse 1.4s infinite; }
-  @keyframes pulse {
-    0% { box-shadow: 0 0 0 0 rgba(224,64,122,0.5); }
-    70% { box-shadow: 0 0 0 26px rgba(224,64,122,0); }
-    100% { box-shadow: 0 0 0 0 rgba(224,64,122,0); }
-  }
-  .orb-label { font-size: 15px; font-weight: 600; color: var(--mist); }
-  .orb-hint { font-size: 13px; color: var(--muted); margin-top: 6px; }
+  /* Input fallbacks */
+  .fallbacks{display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap}
+  .upload-btn{background:var(--panel);border:1px solid var(--line);color:var(--muted);
+    font-family:inherit;font-size:13px;font-weight:600;padding:10px 18px;
+    border-radius:10px;cursor:pointer;display:flex;align-items:center;gap:7px;
+    transition:all .2s}
+  .upload-btn:hover{border-color:var(--violet);color:var(--mist)}
+  .upload-btn input{display:none}
+  .text-row{display:flex;gap:10px;flex:1;min-width:220px}
+  .text-row input{flex:1;background:var(--panel);border:1px solid var(--line);
+    border-radius:10px;padding:11px 16px;color:var(--mist);font-family:inherit;
+    font-size:13px;outline:none;transition:border .2s}
+  .text-row input:focus{border-color:var(--violet)}
+  .send-btn{background:var(--violet);border:none;color:#fff;font-family:inherit;
+    font-weight:600;padding:0 20px;border-radius:10px;cursor:pointer;transition:background .2s}
+  .send-btn:hover{background:var(--vbright)}
 
-  /* Upload mode */
-  .drop { border: 1.5px dashed var(--line); border-radius: 16px; padding: 44px 24px;
-    text-align: center; cursor: pointer; transition: all 0.2s; }
-  .drop:hover, .drop.over { border-color: var(--violet); background: rgba(109,74,255,0.05); }
-  .drop svg { width: 40px; height: 40px; fill: var(--violet-bright); margin-bottom: 14px; }
-  .drop-title { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
-  .drop-hint { font-size: 13px; color: var(--muted); }
-  .drop input { display: none; }
+  /* Console */
+  .console{background:linear-gradient(180deg,var(--deep),rgba(26,15,46,.5));
+    border:1px solid var(--line);border-radius:20px;padding:24px}
+  .toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+  .tts-toggle{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);cursor:pointer}
+  .tts-toggle input{accent-color:var(--violet);width:15px;height:15px}
+  .reset-btn{background:transparent;border:1px solid var(--line);color:var(--muted);
+    font-family:inherit;font-size:12px;padding:6px 13px;border-radius:8px;cursor:pointer;
+    transition:all .2s}
+  .reset-btn:hover{border-color:var(--violet);color:var(--mist)}
 
-  /* Text fallback */
-  .text-row { display: flex; gap: 10px; margin-top: 20px; }
-  .text-row input { flex: 1; background: var(--panel); border: 1px solid var(--line);
-    border-radius: 12px; padding: 14px 18px; color: var(--mist); font-family: inherit;
-    font-size: 14px; outline: none; transition: border 0.2s; }
-  .text-row input:focus { border-color: var(--violet); }
-  .send-btn { background: var(--violet); border: none; color: white; font-family: inherit;
-    font-weight: 600; padding: 0 24px; border-radius: 12px; cursor: pointer;
-    transition: background 0.2s; }
-  .send-btn:hover { background: var(--violet-bright); }
+  /* Messages */
+  .convo{display:flex;flex-direction:column;gap:12px;min-height:40px}
+  .msg{max-width:82%;padding:13px 17px;border-radius:15px;font-size:14px;
+    line-height:1.55;animation:rise .3s ease}
+  @keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .msg.user{align-self:flex-end;background:var(--violet);color:#fff;
+    border-bottom-right-radius:4px}
+  .msg.bot{align-self:flex-start;background:var(--panel);border:1px solid var(--line);
+    border-bottom-left-radius:4px}
+  .msg.bot .tag{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.1em;
+    color:var(--vbright);font-weight:700;margin-bottom:5px}
+  .msg.escalation{align-self:stretch;max-width:100%;background:rgba(255,185,81,.07);
+    border:1px solid rgba(255,185,81,.3);color:var(--warn);font-size:13px}
+  .msg audio{width:100%;margin-top:9px;height:34px}
+  .thinking{align-self:flex-start;color:var(--muted);font-size:13px;
+    display:flex;align-items:center;gap:7px;padding:6px 0}
+  .blip{width:6px;height:6px;border-radius:50%;background:var(--vbright);
+    animation:blink 1.2s infinite}
+  .blip:nth-child(2){animation-delay:.2s}
+  .blip:nth-child(3){animation-delay:.4s}
+  @keyframes blink{0%,60%,100%{opacity:.3}30%{opacity:1}}
 
-  /* Conversation */
-  .convo { margin-top: 28px; display: flex; flex-direction: column; gap: 14px; }
-  .msg { max-width: 82%; padding: 14px 18px; border-radius: 16px; font-size: 14.5px;
-    line-height: 1.55; animation: rise 0.3s ease; }
-  @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-  .msg.user { align-self: flex-end; background: var(--violet); color: white;
-    border-bottom-right-radius: 5px; }
-  .msg.bot { align-self: flex-start; background: var(--panel); border: 1px solid var(--line);
-    border-bottom-left-radius: 5px; }
-  .msg.bot .tag { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em;
-    color: var(--violet-bright); font-weight: 700; margin-bottom: 6px; display: block; }
-  .msg.escalation { align-self: stretch; max-width: 100%; background: rgba(255,185,81,0.08);
-    border: 1px solid rgba(255,185,81,0.3); color: var(--warn); font-size: 13px; }
-  .msg audio { width: 100%; margin-top: 10px; height: 36px; }
-  .thinking { align-self: flex-start; color: var(--muted); font-size: 13px;
-    display: flex; align-items: center; gap: 8px; padding: 8px 4px; }
-  .thinking .blip { width: 6px; height: 6px; border-radius: 50%; background: var(--violet-bright);
-    animation: blink 1.2s infinite; }
-  .thinking .blip:nth-child(2) { animation-delay: 0.2s; }
-  .thinking .blip:nth-child(3) { animation-delay: 0.4s; }
-  @keyframes blink { 0%,60%,100% { opacity: 0.3; } 30% { opacity: 1; } }
+  /* Agent trace */
+  .trace{background:rgba(109,74,255,.04);border:1px solid var(--line);
+    border-radius:10px;padding:11px 14px;margin-bottom:2px}
+  .trace-title{font-size:10px;text-transform:uppercase;letter-spacing:.12em;
+    color:var(--vbright);font-weight:700;margin-bottom:7px}
+  .trace-step{display:flex;align-items:baseline;gap:7px;font-size:12px;padding:3px 0}
+  .trace-step .ag{color:var(--lilac);font-weight:700;min-width:120px}
+  .trace-step .act{color:var(--vbright);font-weight:600}
+  .trace-step .det{color:var(--muted);font-size:11px}
 
-  /* Footer compliance strip */
-  /* agent trace — shows the multi-agent pipeline firing */
-  .trace { margin: 4px 0 14px; background: rgba(109,74,255,0.04);
-    border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
-  .trace-title { font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em;
-    color: var(--violet-bright); font-weight: 700; margin-bottom: 8px; }
-  .trace-step { display: flex; align-items: flex-start; gap: 8px; font-size: 12px;
-    padding: 4px 0; color: var(--mist); }
-  .trace-step .ag { color: var(--lilac); font-weight: 700; min-width: 130px; }
-  .trace-step .act { color: var(--violet-bright); font-weight: 600; }
-  .trace-step .det { color: var(--muted); font-size: 11px; }
-  .trace-arrow { color: var(--muted); font-size: 11px; margin: 0 2px; }
+  /* Compliance pills */
+  .compliance{margin-top:20px;display:flex;flex-wrap:wrap;gap:8px}
+  .pill{background:var(--panel);border:1px solid var(--line);border-radius:20px;
+    padding:5px 12px;font-size:11px;color:var(--muted)}
+  .pill b{color:var(--lilac)}
 
-  .compliance { margin-top: 22px; display: flex; flex-wrap: wrap; gap: 10px;
-    font-size: 11px; color: var(--muted); }
-  .pill { background: var(--panel); border: 1px solid var(--line); border-radius: 20px;
-    padding: 5px 12px; }
-  .pill b { color: var(--lilac); }
-
-  .toolbar { display: flex; justify-content: space-between; align-items: center;
-    margin-bottom: 18px; }
-  .toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted);
-    cursor: pointer; }
-  .toggle input { accent-color: var(--violet); width: 16px; height: 16px; }
-  .reset { background: transparent; border: 1px solid var(--line); color: var(--muted);
-    font-family: inherit; font-size: 12px; padding: 7px 14px; border-radius: 9px; cursor: pointer;
-    transition: all 0.2s; }
-  .reset:hover { border-color: var(--violet); color: var(--mist); }
-
-  .hidden { display: none !important; }
-  .err { color: #FF6B8A; font-size: 13px; text-align: center; padding: 10px; }
-
-  @media (max-width: 560px) {
-    .console { padding: 22px; }
-    .msg { max-width: 90%; }
-  }
+  .err{color:#FF6B8A;font-size:13px;text-align:center;padding:8px;display:none}
+  .err.show{display:block}
+  .hidden{display:none!important}
 </style>
 </head>
 <body>
-  <div class="ambient">
-    <div class="lens l1"></div>
-    <div class="lens l2"></div>
-    <div class="lens l3"></div>
+<div class="ambient"><div class="lens l1"></div><div class="lens l2"></div><div class="lens l3"></div></div>
+
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <div class="mark"><span></span><span></span><span></span></div>
+      <div class="brand-name">Insur<b>Voice</b> AI</div>
+    </div>
+    <div class="status-pill">
+      <span class="dot" id="dot"></span>
+      <span id="statusTxt">Connecting…</span>
+    </div>
+  </header>
+
+  <div class="eyebrow">Multi-Agent Conversational Voice AI · Insurance</div>
+  <h1>Talk to your insurer.<br><span class="em">Get answers in seconds.</span></h1>
+  <p class="sub">A multi-agent voice system — speak naturally, get answers in voice.
+    A router delegates each question to a specialist agent; a compliance guard checks
+    every reply before it's spoken.</p>
+
+  <!-- LIVE ORB — primary input -->
+  <div class="orb-wrap">
+    <button class="orb" id="orb" onclick="toggleLive()" aria-label="Start listening">
+      <svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 003-3V5a3 3 0 00-6 0v6a3 3 0 003 3zm5-3a5 5 0 01-10 0H5a7 7 0 006 6.92V21h2v-3.08A7 7 0 0019 11h-2z"/></svg>
+    </button>
+    <div class="orb-label" id="orbLabel">Tap to start call</div>
+    <div class="orb-hint" id="orbHint">Live voice · speaks back automatically</div>
   </div>
 
-  <div class="wrap">
-    <header>
-      <div class="brand">
-        <div class="mark"><span></span><span></span><span></span></div>
-        <div class="brand-name">Insur<b>Voice</b> AI</div>
-      </div>
-      <div class="status-dot">
-        <span class="dot" id="statusDot"></span>
-        <span id="statusText">Connecting…</span>
-      </div>
-    </header>
+  <!-- Partial transcript bar — shows "hearing: ..." while you speak -->
+  <div class="hearing-bar" id="hearingBar">🎤 Hearing: <span id="partialTxt"></span></div>
 
-    <section class="hero">
-      <div class="eyebrow">Multi-Agent Conversational Voice AI · Insurance</div>
-      <h1>Talk to your insurer.<br><span class="em">Get answers in seconds.</span></h1>
-      <p class="sub">A multi-agent voice system: a router delegates each call to a specialist
-        agent — claims, billing, or policy — and a compliance guard checks every reply against
-        the EU AI Act before it's spoken. Speak naturally; it listens, routes, answers, and
-        hands you to a human the moment you need one.</p>
-    </section>
-
-    <div class="modes">
-      <button class="mode-btn active" id="modeSpeak" onclick="setMode('speak')">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a3 3 0 003-3V5a3 3 0 00-6 0v6a3 3 0 003 3zm5-3a5 5 0 01-10 0H5a7 7 0 006 6.92V21h2v-3.08A7 7 0 0019 11h-2z"/></svg>
-        Speak
-      </button>
-      <button class="mode-btn" id="modeUpload" onclick="setMode('upload')">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13v6H5v-6H3v6a2 2 0 002 2h14a2 2 0 002-2v-6h-2zm-7-9L7.5 8.5 9 10l2-2v8h2V8l2 2 1.5-1.5L12 4z"/></svg>
-        Upload audio
-      </button>
-    </div>
-
-    <div class="console">
-      <div class="toolbar">
-        <label class="toggle">
-          <input type="checkbox" id="ttsToggle" checked>
-          Voice replies on
-        </label>
-        <button class="reset" onclick="resetConvo()">New call</button>
-      </div>
-
-      <!-- SPEAK MODE -->
-      <div id="speakStage" class="speak-stage">
-        <button class="orb-btn" id="orbBtn" onclick="toggleRecording()" aria-label="Start recording">
-          <svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 003-3V5a3 3 0 00-6 0v6a3 3 0 003 3zm5-3a5 5 0 01-10 0H5a7 7 0 006 6.92V21h2v-3.08A7 7 0 0019 11h-2z"/></svg>
-        </button>
-        <div class="orb-label" id="orbLabel">Tap to speak</div>
-        <div class="orb-hint" id="orbHint">Ask about coverage, claims, or billing</div>
-      </div>
-
-      <!-- UPLOAD MODE -->
-      <div id="uploadStage" class="hidden">
-        <div class="drop" id="dropZone" onclick="document.getElementById('fileInput').click()">
-          <svg viewBox="0 0 24 24"><path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14a6 6 0 006 6h13a5 5 0 005-5c0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
-          <div class="drop-title">Drop an audio file or click to browse</div>
-          <div class="drop-hint">WAV, MP3, M4A or WebM</div>
-          <input type="file" id="fileInput" accept="audio/*" onchange="handleFile(this.files[0])">
-        </div>
-      </div>
-
-      <!-- TEXT FALLBACK (always available) -->
-      <div class="text-row">
-        <input type="text" id="textInput" placeholder="…or type your question here"
-               onkeydown="if(event.key==='Enter')sendText()">
-        <button class="send-btn" onclick="sendText()">Send</button>
-      </div>
-
-      <div id="errBox" class="err hidden"></div>
-
-      <!-- CONVERSATION -->
-      <div class="convo" id="convo"></div>
-    </div>
-
-    <div class="compliance">
-      <span class="pill"><b>EU AI Act</b> · Limited Risk (Art. 52) — AI identity disclosed</span>
-      <span class="pill"><b>GDPR</b> · Audio transcribed then discarded, not stored</span>
-      <span class="pill"><b>Whisper</b> + <b>Claude</b> + <b>ElevenLabs</b></span>
+  <!-- Fallbacks -->
+  <div class="fallbacks">
+    <label class="upload-btn">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13v6H5v-6H3v6a2 2 0 002 2h14a2 2 0 002-2v-6h-2zm-7-9L7.5 8.5 9 10l2-2v8h2V8l2 2 1.5-1.5L12 4z"/></svg>
+      Upload audio
+      <input type="file" id="fileIn" accept="audio/*" onchange="uploadFile(this.files[0])">
+    </label>
+    <div class="text-row">
+      <input type="text" id="textIn" placeholder="…or type your question"
+             onkeydown="if(event.key==='Enter')sendText()">
+      <button class="send-btn" onclick="sendText()">Send</button>
     </div>
   </div>
+
+  <!-- Console -->
+  <div class="console">
+    <div class="toolbar">
+      <label class="tts-toggle">
+        <input type="checkbox" id="ttsOn" checked> Voice replies on
+      </label>
+      <button class="reset-btn" onclick="resetCall()">New call</button>
+    </div>
+    <div id="errBox" class="err"></div>
+    <div class="convo" id="convo"></div>
+  </div>
+
+  <div class="compliance">
+    <span class="pill"><b>EU AI Act</b> · Limited Risk (Art. 52) — AI identity disclosed</span>
+    <span class="pill"><b>GDPR</b> · Audio processed in-session, not stored</span>
+    <span class="pill"><b>Deepgram</b> + <b>Claude</b> + <b>ElevenLabs</b></span>
+  </div>
+</div>
 
 <script>
-  let mode = 'speak';
-  let mediaRecorder = null;
-  let chunks = [];
-  let recording = false;
+  // ── State ─────────────────────────────────────────────────────────────────
+  let socket = null;
+  let mediaStream = null;
+  let processor = null;
+  let audioCtx = null;
+  let isLive = false;
+  let deepgramAvailable = false;
 
-  // Health check
-  fetch('/api/health').then(r => r.json()).then(d => {
-    const ok = d.anthropic && d.whisper;
-    document.getElementById('statusDot').classList.toggle('live', ok);
-    document.getElementById('statusText').textContent =
-      ok ? 'Agent online' : 'Server keys missing';
-    if (!d.elevenlabs) {
-      document.getElementById('ttsToggle').checked = false;
-      document.getElementById('ttsToggle').disabled = true;
+  // ── Socket.IO connection ──────────────────────────────────────────────────
+  function initSocket() {
+    socket = io();
+    socket.on("connect", () => {});
+
+    socket.on("connected", d => {
+      deepgramAvailable = d.deepgram_available;
+      setStatus(d.deepgram_available ? "live" : "ready", d.deepgram_available ? "Live STT ready" : "Text mode (no Deepgram key)");
+    });
+
+    socket.on("stream_ready", () => {
+      setOrbState("hearing");
+    });
+
+    socket.on("partial_transcript", d => {
+      document.getElementById("partialTxt").textContent = d.text;
+      document.getElementById("hearingBar").classList.add("active");
+    });
+
+    socket.on("transcript", d => {
+      document.getElementById("hearingBar").classList.remove("active");
+      addMsg("user", d.text);
+      showThinking();
+    });
+
+    socket.on("reply", d => {
+      hideThinking();
+      if (d.agent_trace && d.agent_trace.length) renderTrace(d.agent_trace);
+      addMsg("bot", d.reply, d.intent, d.audio_base64);
+      if (d.escalated) addMsg("escalation",
+        "Transferring to a colleague." + (d.handoff_summary ? " Briefing: " + d.handoff_summary : ""));
+    });
+
+    socket.on("stream_error", d => showErr(d.error));
+    socket.on("disconnect", () => setStatus("offline", "Offline"));
+  }
+
+  // ── Live mic toggle ───────────────────────────────────────────────────────
+  async function toggleLive() {
+    if (!deepgramAvailable) {
+      showErr("No Deepgram key on server — use the text box or file upload.");
+      return;
     }
-  }).catch(() => {
-    document.getElementById('statusText').textContent = 'Offline';
-  });
-
-  function setMode(m) {
-    mode = m;
-    document.getElementById('modeSpeak').classList.toggle('active', m === 'speak');
-    document.getElementById('modeUpload').classList.toggle('active', m === 'upload');
-    document.getElementById('speakStage').classList.toggle('hidden', m !== 'speak');
-    document.getElementById('uploadStage').classList.toggle('hidden', m !== 'upload');
-  }
-
-  function showError(msg) {
-    const box = document.getElementById('errBox');
-    box.textContent = msg;
-    box.classList.remove('hidden');
-    setTimeout(() => box.classList.add('hidden'), 6000);
-  }
-
-  function addMessage(role, text, intent, audioB64, escalated) {
-    const convo = document.getElementById('convo');
-    const div = document.createElement('div');
-    if (role === 'escalation') {
-      div.className = 'msg escalation';
-      div.innerHTML = '⚡ <b>Transferring to a human colleague.</b> ' + text;
-    } else if (role === 'user') {
-      div.className = 'msg user';
-      div.textContent = text;
-    } else {
-      div.className = 'msg bot';
-      let html = '<span class="tag">InsurVoice AI' + (intent ? ' · ' + intent : '') + '</span>' +
-                 escapeHtml(text);
-      if (audioB64) {
-        html += '<audio controls autoplay><source src="data:audio/mpeg;base64,' +
-                audioB64 + '" type="audio/mpeg"></audio>';
-      }
-      div.innerHTML = html;
-    }
-    convo.appendChild(div);
-    div.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }
-
-  function escapeHtml(s) {
-    const d = document.createElement('div'); d.textContent = s; return d.innerHTML;
-  }
-
-  function showThinking() {
-    const convo = document.getElementById('convo');
-    const div = document.createElement('div');
-    div.className = 'thinking'; div.id = 'thinkingIndicator';
-    div.innerHTML = 'InsurVoice is thinking <span class="blip"></span><span class="blip"></span><span class="blip"></span>';
-    convo.appendChild(div);
-    div.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }
-  function hideThinking() {
-    const t = document.getElementById('thinkingIndicator');
-    if (t) t.remove();
-  }
-
-  function ttsOn() { return document.getElementById('ttsToggle').checked; }
-
-  // ---- Recording (mic) ----
-  async function toggleRecording() {
-    if (recording) { stopRecording(); return; }
+    if (isLive) { stopLive(); return; }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorder = new MediaRecorder(stream);
-      chunks = [];
-      mediaRecorder.ondataavailable = e => chunks.push(e.data);
-      mediaRecorder.onstop = () => {
-        const blob = new Blob(chunks, { type: 'audio/webm' });
-        stream.getTracks().forEach(t => t.stop());
-        sendAudio(blob, 'recording.webm');
+      mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+      await audioCtx.resume();
+      const source = audioCtx.createMediaStreamSource(mediaStream);
+      await audioCtx.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET_CODE], { type: "application/javascript" })));
+      processor = new AudioWorkletNode(audioCtx, "pcm-processor");
+      processor.port.onmessage = e => {
+        if (socket && isLive) socket.emit("audio_chunk", e.data);
       };
-      mediaRecorder.start();
-      recording = true;
-      const orb = document.getElementById('orbBtn');
-      orb.classList.add('recording');
-      document.getElementById('orbLabel').textContent = 'Listening… tap to stop';
-      document.getElementById('orbHint').textContent = 'Speak your question now';
+      source.connect(processor);
+      processor.connect(audioCtx.destination);
+      isLive = true;
+      socket.emit("start_stream");
+      setOrbState("hearing");
+      document.getElementById("orbLabel").textContent = "Listening — tap to stop";
+      document.getElementById("orbHint").textContent = "Speak naturally, it replies automatically";
+      setStatus("live", "Hearing you…");
     } catch (e) {
-      showError('Microphone access denied or unavailable. Try the Upload mode or type instead.');
+      showErr("Mic not available: " + e.message + ". Use the text box below.");
     }
   }
 
-  function stopRecording() {
-    if (mediaRecorder && recording) {
-      mediaRecorder.stop();
-      recording = false;
-      document.getElementById('orbBtn').classList.remove('recording');
-      document.getElementById('orbLabel').textContent = 'Tap to speak';
-      document.getElementById('orbHint').textContent = 'Ask about coverage, claims, or billing';
+  function stopLive() {
+    isLive = false;
+    if (processor) { processor.disconnect(); processor = null; }
+    if (audioCtx) { audioCtx.close(); audioCtx = null; }
+    if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
+    if (socket) socket.emit("stop_stream");
+    setOrbState("idle");
+    document.getElementById("orbLabel").textContent = "Tap to start call";
+    document.getElementById("orbHint").textContent = "Live voice · speaks back automatically";
+    document.getElementById("hearingBar").classList.remove("active");
+    setStatus("live", "Live STT ready");
+  }
+
+  // AudioWorklet — converts mic float32 → int16 PCM for Deepgram
+  const WORKLET_CODE = `
+    class PcmProcessor extends AudioWorkletProcessor {
+      process(inputs) {
+        const ch = inputs[0][0];
+        if (!ch) return true;
+        const pcm = new Int16Array(ch.length);
+        for (let i = 0; i < ch.length; i++) {
+          pcm[i] = Math.max(-32768, Math.min(32767, ch[i] * 32768));
+        }
+        this.port.postMessage(pcm.buffer, [pcm.buffer]);
+        return true;
+      }
     }
-  }
+    registerProcessor("pcm-processor", PcmProcessor);
+  `;
 
-  function handleFile(file) {
-    if (file) sendAudio(file, file.name);
-  }
-
-  // Drag & drop
-  const dz = document.getElementById('dropZone');
-  ['dragover','dragenter'].forEach(ev => dz.addEventListener(ev, e => {
-    e.preventDefault(); dz.classList.add('over');
-  }));
-  ['dragleave','drop'].forEach(ev => dz.addEventListener(ev, e => {
-    e.preventDefault(); dz.classList.remove('over');
-  }));
-  dz.addEventListener('drop', e => {
-    if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
-  });
-
-  // ---- API calls ----
-  async function sendAudio(blob, filename) {
-    addMessage('user', '🎤 (voice message)');
+  // ── File upload ───────────────────────────────────────────────────────────
+  async function uploadFile(file) {
+    if (!file) return;
+    addMsg("user", "🎤 " + file.name);
     showThinking();
     const fd = new FormData();
-    fd.append('audio', blob, filename);
-    fd.append('tts', ttsOn());
+    fd.append("audio", file, file.name);
+    fd.append("tts", document.getElementById("ttsOn").checked);
     try {
-      const r = await fetch('/api/voice', { method: 'POST', body: fd });
+      const r = await fetch("/api/upload", { method: "POST", body: fd });
       const d = await r.json();
       hideThinking();
-      if (!r.ok) { showError(d.error || 'Something went wrong'); return; }
-      // Replace the placeholder user message with the real transcript
-      const userMsgs = document.querySelectorAll('.msg.user');
-      if (userMsgs.length) userMsgs[userMsgs.length - 1].textContent = d.transcript;
+      if (!r.ok) { showErr(d.error); return; }
+      const msgs = document.querySelectorAll(".msg.user");
+      if (msgs.length) msgs[msgs.length-1].textContent = d.transcript;
       renderReply(d);
-    } catch (e) {
-      hideThinking(); showError('Network error: ' + e.message);
-    }
+    } catch(e) { hideThinking(); showErr("Upload failed: " + e.message); }
   }
 
+  // ── Text input ────────────────────────────────────────────────────────────
   async function sendText() {
-    const input = document.getElementById('textInput');
+    const input = document.getElementById("textIn");
     const text = input.value.trim();
     if (!text) return;
-    input.value = '';
-    addMessage('user', text);
+    input.value = "";
+    addMsg("user", text);
     showThinking();
     try {
-      const r = await fetch('/api/text', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, tts: ttsOn() })
+      const r = await fetch("/api/text", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, tts: document.getElementById("ttsOn").checked })
       });
       const d = await r.json();
       hideThinking();
-      if (!r.ok) { showError(d.error || 'Something went wrong'); return; }
+      if (!r.ok) { showErr(d.error); return; }
       renderReply(d);
-    } catch (e) {
-      hideThinking(); showError('Network error: ' + e.message);
-    }
+    } catch(e) { hideThinking(); showErr("Error: " + e.message); }
   }
 
+  // ── Render helpers ────────────────────────────────────────────────────────
   function renderReply(d) {
-    if (d.agent_trace && d.agent_trace.length) {
-      renderTrace(d.agent_trace);
+    if (d.agent_trace && d.agent_trace.length) renderTrace(d.agent_trace);
+    addMsg("bot", d.reply, d.intent, d.audio_base64);
+    if (d.escalated) addMsg("escalation",
+      "Transferring to a colleague." + (d.handoff_summary ? " Briefing: " + d.handoff_summary : ""));
+  }
+
+  function addMsg(role, text, intent, audioB64) {
+    const c = document.getElementById("convo");
+    const d = document.createElement("div");
+    if (role === "escalation") {
+      d.className = "msg escalation";
+      d.innerHTML = "⚡ <b>Escalated</b> — " + esc(text);
+    } else if (role === "user") {
+      d.className = "msg user"; d.textContent = text;
+    } else {
+      d.className = "msg bot";
+      let h = (intent ? `<span class="tag">InsurVoice AI · ${esc(intent)}</span>` : "") + esc(text);
+      if (audioB64) h += `<audio autoplay controls><source src="data:audio/mpeg;base64,${audioB64}" type="audio/mpeg"></audio>`;
+      d.innerHTML = h;
     }
-    addMessage('bot', d.reply, d.intent, d.audio_base64, d.escalated);
-    if (d.escalated) {
-      const summary = d.handoff_summary ? ('Agent briefing: ' + d.handoff_summary) : '';
-      addMessage('escalation', summary);
-    }
+    c.appendChild(d);
+    d.scrollIntoView({ behavior: "smooth", block: "end" });
   }
 
   function renderTrace(trace) {
-    const convo = document.getElementById('convo');
-    const div = document.createElement('div');
-    div.className = 'trace';
-    let html = '<div class="trace-title">&#9881; Multi-agent pipeline</div>';
-    trace.forEach(step => {
-      html += '<div class="trace-step">' +
-              '<span class="ag">' + escapeHtml(step.agent) + '</span>' +
-              '<span class="act">' + escapeHtml(step.action) + '</span>' +
-              (step.detail ? '<span class="det">&mdash; ' + escapeHtml(step.detail) + '</span>' : '') +
-              '</div>';
+    const c = document.getElementById("convo");
+    const d = document.createElement("div");
+    d.className = "trace";
+    let h = '<div class="trace-title">&#9881; Multi-agent pipeline</div>';
+    trace.forEach(s => {
+      h += `<div class="trace-step"><span class="ag">${esc(s.agent)}</span><span class="act">${esc(s.action)}</span>${s.detail ? `<span class="det">— ${esc(s.detail)}</span>` : ""}</div>`;
     });
-    div.innerHTML = html;
-    convo.appendChild(div);
-    div.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    d.innerHTML = h;
+    c.appendChild(d);
+    d.scrollIntoView({ behavior: "smooth", block: "end" });
   }
 
-  async function resetConvo() {
-    await fetch('/api/reset', { method: 'POST' });
-    document.getElementById('convo').innerHTML = '';
-    stopRecording();
+  function showThinking() {
+    const c = document.getElementById("convo");
+    const d = document.createElement("div");
+    d.className = "thinking"; d.id = "thinking";
+    d.innerHTML = 'InsurVoice is thinking <span class="blip"></span><span class="blip"></span><span class="blip"></span>';
+    c.appendChild(d); d.scrollIntoView({ behavior: "smooth", block: "end" });
   }
+  function hideThinking() { const t = document.getElementById("thinking"); if(t) t.remove(); }
+
+  function setOrbState(state) {
+    const o = document.getElementById("orb");
+    o.className = "orb" + (state === "hearing" ? " hearing" : state === "processing" ? " processing" : "");
+  }
+
+  function setStatus(state, txt) {
+    const dot = document.getElementById("dot");
+    dot.className = "dot" + (state === "live" ? " live" : state === "hearing" ? " hearing" : "");
+    document.getElementById("statusTxt").textContent = txt;
+  }
+
+  function showErr(msg) {
+    const b = document.getElementById("errBox");
+    b.textContent = msg; b.classList.add("show");
+    setTimeout(() => b.classList.remove("show"), 7000);
+  }
+
+  function esc(s) {
+    const d = document.createElement("div"); d.textContent = s; return d.innerHTML;
+  }
+
+  async function resetCall() {
+    stopLive();
+    await fetch("/api/reset", { method: "POST" });
+    document.getElementById("convo").innerHTML = "";
+    document.getElementById("hearingBar").classList.remove("active");
+  }
+
+  // Health check to show which keys are active
+  fetch("/api/health").then(r => r.json()).then(d => {
+    if (!d.anthropic) showErr("Missing ANTHROPIC_API_KEY on server");
+  }).catch(() => {});
+
+  // Init socket on page load
+  initSocket();
 </script>
 </body>
 </html>
