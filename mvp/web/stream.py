@@ -1,6 +1,7 @@
 """
 stream.py — InsurVoice AI · Deepgram direct WebSocket STT
-Language detection only on long non-ASCII text to avoid false positives.
+Uses nova-3 model for best accent handling.
+Language detection only on long non-ASCII text.
 """
 
 import requests
@@ -10,20 +11,15 @@ import time
 
 
 def detect_language(text: str) -> str:
-    """
-    Detect language only when text is long enough and contains non-ASCII chars.
-    Short or pure-ASCII text defaults to English to avoid false positives.
-    """
+    """Detect language only when text is long enough and contains non-ASCII chars."""
     if not text or len(text) < 20:
         return "en"
-    # Pure ASCII = almost certainly English (no umlauts, accents etc.)
     if all(ord(c) < 128 for c in text):
         return "en"
     try:
         from langdetect import detect
         lang = detect(text)
-        # Only trust languages we explicitly support
-        if lang in {"de", "es", "fr", "it", "nl", "pt", "pl"}:
+        if lang in {"de", "es", "fr", "it", "pt", "pl"}:
             return lang
         return "en"
     except Exception:
@@ -37,7 +33,8 @@ def transcribe_chunk(audio_bytes: bytes, api_key: str) -> dict:
         return {"success": False, "text": "", "language": "en", "error": "Audio too short"}
     try:
         r = requests.post(
-            "https://api.deepgram.com/v1/listen?model=nova-2-general&punctuate=true",
+            "https://api.deepgram.com/v1/listen"
+            "?model=nova-3&punctuate=true",
             headers={"Authorization": f"Token {api_key}", "Content-Type": "audio/webm"},
             data=audio_bytes, timeout=30,
         )
@@ -59,11 +56,18 @@ transcribe_streaming_chunk = transcribe_chunk
 
 
 class DeepgramStreamSession:
-    # nova-2-general handles multiple languages including German, Spanish, French
+    """
+    Uses nova-3 — Deepgram's best model for accent robustness and non-native speakers.
+    nova-3 is significantly better than nova-2 for:
+    - Non-native English speakers
+    - German, Spanish, French spoken with foreign accents
+    - Background noise
+    - Phone-quality audio
+    """
     WS_URL = (
         "wss://api.deepgram.com/v1/listen"
-        "?model=nova-2-general&encoding=linear16&sample_rate=16000"
-        "&channels=1&punctuate=true&interim_results=true&endpointing=600"
+        "?model=nova-3&encoding=linear16&sample_rate=16000"
+        "&channels=1&punctuate=true&interim_results=true&endpointing=800"
     )
 
     def __init__(self, api_key: str, on_transcript):
@@ -82,7 +86,7 @@ class DeepgramStreamSession:
         self._started.clear()
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
-        self._started.wait(timeout=3)
+        self._started.wait(timeout=4)
 
     def stop(self):
         self._running = False
@@ -109,6 +113,20 @@ class DeepgramStreamSession:
             a, b = text.lower(), self._last_final.lower()
             if a in b or b in a:
                 return True
+        return False
+
+    def _is_noise(self, text: str, confidence: float) -> bool:
+        """Filter out likely noise/garbled transcriptions."""
+        # Low confidence score
+        if confidence < 0.6:
+            return True
+        # Nonsense patterns — random capitalised words that don't form a sentence
+        words = text.split()
+        if len(words) <= 2:
+            return False  # short phrases are ok even if odd
+        # If every word is capitalised and it's more than 3 words = likely garbled
+        if len(words) > 3 and sum(1 for w in words if w[0].isupper()) == len(words):
+            return True
         return False
 
     def _run(self):
@@ -145,10 +163,13 @@ class DeepgramStreamSession:
                                 if data.get("type") == "Results":
                                     alts = data.get("channel", {}).get("alternatives", [{}])
                                     text = alts[0].get("transcript", "").strip()
+                                    confidence = alts[0].get("confidence", 1.0)
                                     is_final = data.get("is_final", False)
                                     if text and len(text) >= 3:
                                         if is_final:
                                             if self._is_duplicate(text):
+                                                continue
+                                            if self._is_noise(text, confidence):
                                                 continue
                                             self._last_final = text
                                             self._last_final_time = time.time()
