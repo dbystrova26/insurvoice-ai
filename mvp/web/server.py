@@ -234,6 +234,30 @@ def on_audio_chunk(data):
         _streams[sid].send_audio(chunk)
 
 
+@socketio.on("resume_stream")
+def on_resume_stream():
+    """Resume Deepgram after TTS audio finishes playing."""
+    if not DEEPGRAM_KEY:
+        return
+    socket_id = request.sid
+    sid = _sid()
+    if sid in _streams:
+        _streams[sid].stop()
+
+    def on_transcript(text: str, is_final: bool, language: str = "en"):
+        if is_final:
+            import threading
+            threading.Thread(
+                target=_run_turn, args=(sid, text, socket_id, language), daemon=True
+            ).start()
+        else:
+            socketio.emit("partial_transcript", {"text": text}, room=socket_id)
+
+    stream = DeepgramStreamSession(DEEPGRAM_KEY, on_transcript)
+    stream.start()
+    _streams[sid] = stream
+
+
 @socketio.on("stop_stream")
 def on_stop_stream():
     sid = _sid()

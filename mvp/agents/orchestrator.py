@@ -63,21 +63,30 @@ class Orchestrator:
         ht = self._history_text()
         return f"CONVERSATION SO FAR:\n{ht}" if ht else ""
 
-    def _build_context(self, user_message: str, route: str = "") -> dict:
+    def _build_context(self, user_message: str, language: str = "en") -> dict:
+        lang_names = {
+            "en": "English", "de": "German", "es": "Spanish",
+            "fr": "French", "it": "Italian", "nl": "Dutch",
+            "pt": "Portuguese", "pl": "Polish",
+        }
+        lang_name = lang_names.get(language, "English")
         return {
             "kb_context": retrieve_context(user_message),
             "history_text": self._history_text(),
             "history_section": self._history_section() if not self.is_first_turn else "",
             "is_first_turn": self.is_first_turn,
+            "language": language,
+            "language_name": lang_name,
+            "language_instruction": f"IMPORTANT: The customer is speaking {lang_name}. You MUST reply in {lang_name} only.",
         }
 
     # ---- main turn -------------------------------------------------------
 
-    def respond(self, user_message: str) -> dict:
+    def respond(self, user_message: str, language: str = "en") -> dict:
         self.turn_count += 1
-        trace = []  # records which agents ran, for the UI
+        trace = []
 
-        ctx = self._build_context(user_message)
+        ctx = self._build_context(user_message, language)
 
         # [1] ROUTE
         routing = self.router.call(user_message, ctx)
@@ -139,7 +148,7 @@ class Orchestrator:
         # Track repeated non-resolution → safety-net auto-escalation
         if not resolved and not escalate:
             self.consecutive_unresolved += 1
-            if self.consecutive_unresolved >= 2:
+            if self.consecutive_unresolved >= 4:  # only after 4 unresolved turns
                 ctx["escalation_reason"] = "two consecutive turns without resolution"
                 esc = self.escalation.call(user_message, ctx)
                 candidate = esc.get("response", candidate)

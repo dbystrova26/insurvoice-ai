@@ -51,7 +51,6 @@ class DeepgramStreamSession:
         "wss://api.deepgram.com/v1/listen"
         "?model=nova-2&encoding=linear16&sample_rate=16000"
         "&channels=1&punctuate=true&interim_results=true&endpointing=600"
-        "&detect_language=true"
     )
 
     def __init__(self, api_key: str, on_transcript):

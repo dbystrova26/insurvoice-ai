@@ -24,12 +24,10 @@
     background:radial-gradient(circle at 60% 40%,rgba(109,74,255,.12),transparent 60%)}
   .wrap{position:relative;z-index:1;max-width:880px;margin:0 auto;padding:28px 24px 80px}
 
-  /* Header */
   header{display:flex;align-items:center;justify-content:space-between;padding-bottom:24px}
   .brand{display:flex;align-items:center;gap:12px}
   .mark{width:36px;height:36px;position:relative;flex-shrink:0}
-  .mark span{position:absolute;border-radius:50%;border:2px solid var(--violet);
-    top:0;left:0;width:36px;height:36px}
+  .mark span{position:absolute;border-radius:50%;border:2px solid var(--violet);top:0;left:0;width:36px;height:36px}
   .mark span:nth-child(2){transform:translateX(8px) scale(.82);border-color:var(--vbright);opacity:.7}
   .mark span:nth-child(3){transform:translateX(16px) scale(.64);border-color:var(--lilac);opacity:.5}
   .brand-name{font-size:18px;font-weight:700;letter-spacing:-.02em}
@@ -39,13 +37,11 @@
   .dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
   .dot.live{background:var(--success);box-shadow:0 0 8px var(--success)}
   .dot.hearing{background:var(--vbright);box-shadow:0 0 8px var(--vbright);animation:pdot 1s infinite}
+  .dot.speaking{background:var(--warn);box-shadow:0 0 8px var(--warn)}
   @keyframes pdot{0%,100%{opacity:1}50%{opacity:.4}}
 
-  /* Hero */
-  .eyebrow{font-size:11px;letter-spacing:.18em;text-transform:uppercase;
-    color:var(--vbright);font-weight:600;margin-bottom:12px}
-  h1{font-size:clamp(28px,5vw,44px);font-weight:800;line-height:1.05;
-    letter-spacing:-.03em;margin-bottom:14px}
+  .eyebrow{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--vbright);font-weight:600;margin-bottom:12px}
+  h1{font-size:clamp(28px,5vw,44px);font-weight:800;line-height:1.05;letter-spacing:-.03em;margin-bottom:14px}
   h1 .em{background:linear-gradient(120deg,var(--vbright),var(--lilac));
     -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
   .sub{font-size:15px;color:var(--muted);max-width:540px;line-height:1.6;margin-bottom:28px}
@@ -54,16 +50,14 @@
   .orb-wrap{display:flex;flex-direction:column;align-items:center;margin:8px 0 24px}
   .orb{width:120px;height:120px;border-radius:50%;border:none;cursor:pointer;
     background:var(--violet);display:flex;align-items:center;justify-content:center;
-    transition:transform .2s,background .3s;box-shadow:0 0 0 0 rgba(109,74,255,.5)}
+    transition:transform .2s,background .3s}
   .orb:hover{transform:scale(1.04)}
   .orb svg{width:44px;height:44px;fill:#fff}
-  .orb.hearing{background:#4ADE80;animation:orb-pulse 1.2s infinite;
-    box-shadow:0 0 32px rgba(74,222,128,.4)}
-  .orb.processing{background:var(--vbright);cursor:default}
-  @keyframes orb-pulse{
-    0%{box-shadow:0 0 0 0 rgba(74,222,128,.5)}
-    70%{box-shadow:0 0 0 28px rgba(74,222,128,0)}
-    100%{box-shadow:0 0 0 0 rgba(74,222,128,0)}}
+  .orb.hearing{background:#4ADE80;animation:orb-pulse 1.2s infinite}
+  .orb.speaking{background:var(--warn);animation:orb-speak .8s infinite}
+  .orb.processing{background:var(--vbright)}
+  @keyframes orb-pulse{0%{box-shadow:0 0 0 0 rgba(74,222,128,.5)}70%{box-shadow:0 0 0 28px rgba(74,222,128,0)}100%{box-shadow:0 0 0 0 rgba(74,222,128,0)}}
+  @keyframes orb-speak{0%,100%{box-shadow:0 0 0 0 rgba(255,185,81,.5)}50%{box-shadow:0 0 0 20px rgba(255,185,81,0)}}
   .orb-label{margin-top:14px;font-size:15px;font-weight:600;color:var(--mist)}
   .orb-hint{margin-top:5px;font-size:12px;color:var(--muted)}
 
@@ -73,7 +67,7 @@
     min-height:38px;margin-bottom:14px;display:none}
   .hearing-bar.active{display:block}
 
-  /* Fallbacks */
+  /* Text fallback */
   .fallbacks{display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap}
   .upload-btn{background:var(--panel);border:1px solid var(--line);color:var(--muted);
     font-family:inherit;font-size:13px;font-weight:600;padding:10px 18px;
@@ -99,42 +93,33 @@
     font-family:inherit;font-size:12px;padding:6px 13px;border-radius:8px;cursor:pointer;transition:all .2s}
   .reset-btn:hover{border-color:var(--violet);color:var(--mist)}
 
-  /* Messages */
+  /* Messages — no audio player shown */
   .convo{display:flex;flex-direction:column;gap:12px;min-height:40px}
-  .msg{max-width:82%;padding:13px 17px;border-radius:15px;font-size:14px;
-    line-height:1.55;animation:rise .3s ease}
+  .msg{max-width:82%;padding:13px 17px;border-radius:15px;font-size:14px;line-height:1.55;animation:rise .3s ease}
   @keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
   .msg.user{align-self:flex-end;background:var(--violet);color:#fff;border-bottom-right-radius:4px}
-  .msg.bot{align-self:flex-start;background:var(--panel);border:1px solid var(--line);
-    border-bottom-left-radius:4px}
-  .msg.bot .tag{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.1em;
-    color:var(--vbright);font-weight:700;margin-bottom:5px}
-  .msg.escalation{align-self:stretch;max-width:100%;background:rgba(255,185,81,.07);
-    border:1px solid rgba(255,185,81,.3);color:var(--warn);font-size:13px}
-  .msg audio{width:100%;margin-top:9px;height:34px}
-  .thinking{align-self:flex-start;color:var(--muted);font-size:13px;
-    display:flex;align-items:center;gap:7px;padding:6px 0}
+  .msg.bot{align-self:flex-start;background:var(--panel);border:1px solid var(--line);border-bottom-left-radius:4px}
+  .msg.bot .tag{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--vbright);font-weight:700;margin-bottom:5px}
+  .msg.escalation{align-self:stretch;max-width:100%;background:rgba(255,185,81,.07);border:1px solid rgba(255,185,81,.3);color:var(--warn);font-size:13px}
+  /* Hidden audio — plays automatically, no visible player */
+  .hidden-audio{display:none}
+
+  .thinking{align-self:flex-start;color:var(--muted);font-size:13px;display:flex;align-items:center;gap:7px;padding:6px 0}
   .blip{width:6px;height:6px;border-radius:50%;background:var(--vbright);animation:blink 1.2s infinite}
   .blip:nth-child(2){animation-delay:.2s}
   .blip:nth-child(3){animation-delay:.4s}
   @keyframes blink{0%,60%,100%{opacity:.3}30%{opacity:1}}
 
-  /* Agent trace */
-  .trace{background:rgba(109,74,255,.04);border:1px solid var(--line);
-    border-radius:10px;padding:11px 14px;margin-bottom:2px}
-  .trace-title{font-size:10px;text-transform:uppercase;letter-spacing:.12em;
-    color:var(--vbright);font-weight:700;margin-bottom:7px}
+  .trace{background:rgba(109,74,255,.04);border:1px solid var(--line);border-radius:10px;padding:11px 14px;margin-bottom:2px}
+  .trace-title{font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:var(--vbright);font-weight:700;margin-bottom:7px}
   .trace-step{display:flex;align-items:baseline;gap:7px;font-size:12px;padding:3px 0}
   .trace-step .ag{color:var(--lilac);font-weight:700;min-width:120px}
   .trace-step .act{color:var(--vbright);font-weight:600}
   .trace-step .det{color:var(--muted);font-size:11px}
 
-  /* Compliance */
   .compliance{margin-top:20px;display:flex;flex-wrap:wrap;gap:8px}
-  .pill{background:var(--panel);border:1px solid var(--line);border-radius:20px;
-    padding:5px 12px;font-size:11px;color:var(--muted)}
+  .pill{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:5px 12px;font-size:11px;color:var(--muted)}
   .pill b{color:var(--lilac)}
-
   .err{color:#FF6B8A;font-size:13px;text-align:center;padding:8px;display:none}
   .err.show{display:block}
 </style>
@@ -157,21 +142,18 @@
   <div class="eyebrow">Multi-Agent Conversational Voice AI · Insurance</div>
   <h1>Talk to your insurer.<br><span class="em">Get answers in seconds.</span></h1>
   <p class="sub">Speak naturally — the agent hears you, routes your question to a specialist,
-    checks the reply, and speaks back. No buttons. No waiting.</p>
+    checks the reply, and speaks back. Tap once to start, tap to stop.</p>
 
-  <!-- Orb -->
   <div class="orb-wrap">
     <button class="orb" id="orb" onclick="toggleLive()" aria-label="Start listening">
       <svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 003-3V5a3 3 0 00-6 0v6a3 3 0 003 3zm5-3a5 5 0 01-10 0H5a7 7 0 006 6.92V21h2v-3.08A7 7 0 0019 11h-2z"/></svg>
     </button>
     <div class="orb-label" id="orbLabel">Tap to start call</div>
-    <div class="orb-hint" id="orbHint">Live voice · speaks back automatically</div>
+    <div class="orb-hint" id="orbHint">Speaks back automatically · tap again to stop</div>
   </div>
 
-  <!-- Partial transcript -->
-  <div class="hearing-bar" id="hearingBar">🎤 Hearing: <span id="partialTxt"></span></div>
+  <div class="hearing-bar" id="hearingBar">🎤 <span id="partialTxt"></span></div>
 
-  <!-- Fallbacks -->
   <div class="fallbacks">
     <label class="upload-btn">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13v6H5v-6H3v6a2 2 0 002 2h14a2 2 0 002-2v-6h-2zm-7-9L7.5 8.5 9 10l2-2v8h2V8l2 2 1.5-1.5L12 4z"/></svg>
@@ -185,7 +167,6 @@
     </div>
   </div>
 
-  <!-- Console -->
   <div class="console">
     <div class="toolbar">
       <label class="tts-toggle">
@@ -211,8 +192,8 @@
   let audioCtx = null;
   let isLive = false;
   let deepgramAvailable = false;
+  let isSpeaking = false;  // true while TTS audio is playing
 
-  // AudioWorklet code — converts float32 mic input to int16 PCM for Deepgram
   const WORKLET = `
     class PcmProcessor extends AudioWorkletProcessor {
       process(inputs) {
@@ -234,7 +215,7 @@
     socket.on("connected", d => {
       deepgramAvailable = d.deepgram_available;
       setStatus(d.deepgram_available ? "live" : "ready",
-                d.deepgram_available ? "Live STT ready" : "Text mode (no Deepgram key)");
+                d.deepgram_available ? "Live STT ready" : "Text mode");
     });
     socket.on("stream_ready", () => setOrbState("hearing"));
     socket.on("partial_transcript", d => {
@@ -243,34 +224,62 @@
     });
     socket.on("transcript", d => {
       document.getElementById("hearingBar").classList.remove("active");
+      document.getElementById("partialTxt").textContent = "";
       addMsg("user", d.text);
       showThinking();
     });
     socket.on("reply", d => {
       hideThinking();
       if (d.agent_trace && d.agent_trace.length) renderTrace(d.agent_trace);
-      addMsg("bot", d.reply, d.intent, d.audio_base64);
+      addMsg("bot", d.reply, d.intent);
       if (d.escalated) addMsg("escalation",
         "Transferring to a colleague." + (d.handoff_summary ? " Briefing: " + d.handoff_summary : ""));
+      // Play audio and auto-resume listening when done
+      if (d.audio_base64) {
+        playAudioAndResume(d.audio_base64, d.escalated);
+      }
     });
     socket.on("stream_error", d => showErr(d.error));
     socket.on("disconnect", () => setStatus("offline", "Offline"));
   }
 
+  function playAudioAndResume(b64, escalated) {
+    isSpeaking = true;
+    setOrbState("speaking");
+    setStatus("speaking", "Speaking…");
+
+    const audio = new Audio("data:audio/mpeg;base64," + b64);
+    audio.onended = () => {
+      isSpeaking = false;
+      // Auto-resume listening if still in call and not escalated
+      if (isLive && !escalated) {
+        setOrbState("hearing");
+        setStatus("hearing", "Hearing you…");
+        // Re-send start_stream to resume Deepgram connection
+        if (socket) socket.emit("resume_stream");
+      } else if (!isLive) {
+        setOrbState("idle");
+        setStatus("live", "Live STT ready");
+      }
+    };
+    audio.onerror = () => {
+      isSpeaking = false;
+      if (isLive && !escalated) setOrbState("hearing");
+    };
+    audio.play().catch(() => {
+      isSpeaking = false;
+    });
+  }
+
   async function toggleLive() {
     if (!deepgramAvailable) {
-      showErr("No Deepgram key on server — use the text box or file upload.");
+      showErr("No Deepgram key — use the text box.");
       return;
     }
     if (isLive) { stopLive(); return; }
     try {
-      // Echo cancellation prevents the mic picking up the speaker output
       mediaStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        }
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
       });
       audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
       await audioCtx.resume();
@@ -279,17 +288,17 @@
       await audioCtx.audioWorklet.addModule(URL.createObjectURL(blob));
       processor = new AudioWorkletNode(audioCtx, "pcm-processor");
       processor.port.onmessage = e => {
-        if (socket && isLive) socket.emit("audio_chunk", e.data);
+        // Don't send audio while the agent is speaking (prevents echo)
+        if (socket && isLive && !isSpeaking) socket.emit("audio_chunk", e.data);
       };
       source.connect(processor);
       isLive = true;
       socket.emit("start_stream");
-      setOrbState("hearing");
       document.getElementById("orbLabel").textContent = "Listening — tap to stop";
-      document.getElementById("orbHint").textContent = "Speak naturally, it replies automatically";
+      document.getElementById("orbHint").textContent = "Speak naturally · pauses automatically when agent replies";
       setStatus("hearing", "Hearing you…");
     } catch (e) {
-      showErr("Mic not available: " + e.message + ". Use the text box instead.");
+      showErr("Mic not available: " + e.message);
     }
   }
 
@@ -301,9 +310,10 @@
     if (socket) socket.emit("stop_stream");
     setOrbState("idle");
     document.getElementById("orbLabel").textContent = "Tap to start call";
-    document.getElementById("orbHint").textContent = "Live voice · speaks back automatically";
+    document.getElementById("orbHint").textContent = "Speaks back automatically · tap again to stop";
     document.getElementById("hearingBar").classList.remove("active");
     setStatus("live", "Live STT ready");
+    isSpeaking = false;
   }
 
   async function uploadFile(file) {
@@ -345,12 +355,13 @@
 
   function renderReply(d) {
     if (d.agent_trace && d.agent_trace.length) renderTrace(d.agent_trace);
-    addMsg("bot", d.reply, d.intent, d.audio_base64);
+    addMsg("bot", d.reply, d.intent);
     if (d.escalated) addMsg("escalation",
       "Transferring to a colleague." + (d.handoff_summary ? " Briefing: " + d.handoff_summary : ""));
+    if (d.audio_base64) playAudioAndResume(d.audio_base64, d.escalated);
   }
 
-  function addMsg(role, text, intent, audioB64) {
+  function addMsg(role, text, intent) {
     const c = document.getElementById("convo");
     const d = document.createElement("div");
     if (role === "escalation") {
@@ -360,9 +371,8 @@
       d.className = "msg user"; d.textContent = text;
     } else {
       d.className = "msg bot";
-      let h = (intent ? `<span class="tag">InsurVoice AI · ${esc(intent)}</span>` : "") + esc(text);
-      if (audioB64) h += `<audio autoplay controls><source src="data:audio/mpeg;base64,${audioB64}" type="audio/mpeg"></audio>`;
-      d.innerHTML = h;
+      d.innerHTML = (intent ? `<span class="tag">InsurVoice AI · ${esc(intent)}</span>` : "") + esc(text);
+      // No audio player shown — audio plays silently via playAudioAndResume()
     }
     c.appendChild(d);
     d.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -392,11 +402,11 @@
 
   function setOrbState(s) {
     document.getElementById("orb").className = "orb" +
-      (s==="hearing"?" hearing":s==="processing"?" processing":"");
+      (s==="hearing"?" hearing":s==="speaking"?" speaking":s==="processing"?" processing":"");
   }
   function setStatus(s, txt) {
     document.getElementById("dot").className = "dot" +
-      (s==="live"?" live":s==="hearing"?" hearing":"");
+      (s==="live"?" live":s==="hearing"?" hearing":s==="speaking"?" speaking":"");
     document.getElementById("statusTxt").textContent = txt;
   }
   function showErr(msg) {
@@ -414,7 +424,7 @@
   }
 
   fetch("/api/health").then(r => r.json()).then(d => {
-    if (!d.anthropic) showErr("Missing ANTHROPIC_API_KEY on server");
+    if (!d.anthropic) showErr("Missing ANTHROPIC_API_KEY");
   }).catch(() => {});
 
   initSocket();

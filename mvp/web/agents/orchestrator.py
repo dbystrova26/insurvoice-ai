@@ -148,7 +148,7 @@ class Orchestrator:
         # Track repeated non-resolution → safety-net auto-escalation
         if not resolved and not escalate:
             self.consecutive_unresolved += 1
-            if self.consecutive_unresolved >= 2:
+            if self.consecutive_unresolved >= 4:  # only after 4 unresolved turns
                 ctx["escalation_reason"] = "two consecutive turns without resolution"
                 esc = self.escalation.call(user_message, ctx)
                 candidate = esc.get("response", candidate)
