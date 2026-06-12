@@ -6,6 +6,7 @@ import os
 import base64
 import uuid
 import time
+import requests as req
 from flask import Flask, request, jsonify, render_template, session
 from flask_socketio import SocketIO, emit, join_room
 from dotenv import load_dotenv
@@ -25,10 +26,12 @@ OPENAI_KEY     = os.getenv("OPENAI_API_KEY", "")
 ELEVENLABS_KEY = os.getenv("ELEVENLABS_API_KEY", "")
 DEEPGRAM_KEY   = os.getenv("DEEPGRAM_API_KEY", "")
 VOICE_ID       = os.getenv("ELEVENLABS_VOICE_ID", DEFAULT_VOICE_ID)
+SIMLI_API_KEY  = os.getenv("SIMLI_API_KEY", "")
+SIMLI_FACE_ID  = os.getenv("SIMLI_FACE_ID", "")
 
 _agents: dict[str, Orchestrator] = {}
 _streams: dict[str, DeepgramStreamSession] = {}
-_last_turn: dict[str, tuple] = {}  # sid -> (transcript, timestamp) for dedup
+_last_turn: dict[str, tuple] = {}
 
 
 def _sid() -> str:
@@ -44,26 +47,21 @@ def _get_agent(sid: str) -> Orchestrator:
 
 
 def _run_turn(sid: str, transcript: str, socket_id: str, language: str = "en"):
-    """Run one agent turn. Deduplicated — ignores repeats within 4 seconds."""
     transcript = transcript.strip()
     if not transcript or len(transcript) < 4:
         return
     if transcript.lower() in {"the", "a", "uh", "um", "hmm", "oh", "ah"}:
         return
-
-    # Deduplication: drop if same/similar transcript fired within 4 seconds
     now = time.time()
     last_text, last_time = _last_turn.get(sid, ("", 0))
     if (now - last_time) < 4.0:
         if transcript == last_text:
             return
-        # Also drop if one is a substring of the other
         if transcript.lower() in last_text.lower() or last_text.lower() in transcript.lower():
             return
     _last_turn[sid] = (transcript, now)
 
     socketio.emit("transcript", {"text": transcript, "language": language}, room=socket_id)
-
     agent = _get_agent(sid)
     result = agent.respond(transcript, language=language)
 
@@ -92,6 +90,11 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/avatar")
+def avatar():
+    return render_template("avatar.html")
+
+
 @app.route("/api/health")
 def health():
     return jsonify({
@@ -99,7 +102,7 @@ def health():
         "anthropic": bool(ANTHROPIC_KEY),
         "deepgram": bool(DEEPGRAM_KEY),
         "elevenlabs": bool(ELEVENLABS_KEY),
-        "whisper_fallback": bool(OPENAI_KEY),
+        "simli": bool(SIMLI_API_KEY),
     })
 
 
@@ -110,6 +113,59 @@ def reset():
         _agents[sid].reset()
     _last_turn.pop(sid, None)
     return jsonify({"status": "reset"})
+
+
+@app.route("/api/simli/session")
+def simli_session():
+    if not SIMLI_API_KEY or not SIMLI_FACE_ID:
+        return jsonify({"error": "Simli keys not configured"}), 500
+    try:
+        ice_resp = req.post(
+            "https://api.simli.ai/getIceServers",
+            headers={"Content-Type": "application/json"},
+            json={"apiKey": SIMLI_API_KEY},
+            timeout=10,
+        )
+        ice_servers = ice_resp.json() if ice_resp.status_code == 200 else None
+
+        # Use compose/token endpoint for LiveKit transport
+        sess_resp = req.post(
+            "https://api.simli.ai/compose/token",
+            headers={"Content-Type": "application/json"},
+            json={
+                "faceId": SIMLI_FACE_ID,
+                "apiKey": SIMLI_API_KEY,
+                "handleSilence": True,
+                "maxSessionLength": 600,
+                "maxIdleTime": 180,
+            },
+            timeout=10,
+        )
+        if sess_resp.status_code != 200:
+            # Fallback to old endpoint
+            sess_resp = req.post(
+                "https://api.simli.ai/startAudioToVideoSession",
+                headers={"Content-Type": "application/json"},
+                json={
+                    "faceId": SIMLI_FACE_ID,
+                    "isJPG": False,
+                    "apiKey": SIMLI_API_KEY,
+                    "handleSilence": True,
+                    "maxSessionLength": 600,
+                    "maxIdleTime": 180,
+                },
+                timeout=10,
+            )
+        if sess_resp.status_code != 200:
+            return jsonify({"error": f"Simli error: {sess_resp.text[:100]}"}), 502
+
+        data = sess_resp.json()
+        return jsonify({
+            "session_token": data.get("session_token") or data.get("sessionToken"),
+            "ice_servers": ice_servers,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)[:100]}), 500
 
 
 @app.route("/api/text", methods=["POST"])
@@ -182,6 +238,8 @@ def on_connect():
     emit("connected", {
         "deepgram_available": bool(DEEPGRAM_KEY),
         "elevenlabs_available": bool(ELEVENLABS_KEY),
+        "simli_api_key": SIMLI_API_KEY,
+        "simli_face_id": SIMLI_FACE_ID,
     })
 
 
@@ -220,10 +278,9 @@ def on_audio_chunk(data):
 
 @socketio.on("resume_stream")
 def on_resume_stream():
-    """Resume listening after TTS — reuse existing stream if still alive."""
     sid = _sid()
     if sid in _streams and _streams[sid].is_alive():
-        return  # still running, nothing to do
+        return
     if not DEEPGRAM_KEY:
         return
     socket_id = request.sid
