@@ -1,73 +1,106 @@
-# insurvoice-ai
+# InsurVoice AI
 
-**AI voice agent for insurance customer service.**  
-Ironhack AI Consulting Bootcamp — Final Project.  
-A multi-agent voice system: live speech-to-text → routed reasoning → compliance check → text-to-speech. EU AI Act & GDPR compliant.
+**AI voice agent for insurance customer service — with lip-synced avatar.**  
+Ironhack AI Consulting Bootcamp · Final Project · Daria Bystrova
 
----
-
-## What it is
-
-InsurVoice AI is a conversational **voice agent** that answers insurance customer calls autonomously. A caller speaks; Deepgram transcribes the audio in real time, a router delegates the question to a specialist agent, a compliance guard checks the reply, and the answer is spoken back via ElevenLabs. It hands off to a human agent the moment one is needed.
-
-**Use case:** Allianz Direct GmbH (fictional) — a mid-size direct insurer handling ~1,800 calls/day, 68% of them routine Tier-1 queries, at a ~EUR 2.1M annual contact-centre cost. Deflecting 60%+ of Tier-1 calls to the AI represents ~EUR 1.2M of annual value.
-
----
-
-## System & Data Architecture
-
-![InsurVoice architecture](architecture.png)
-
-**How a turn flows:**
-1. **Voice in** — the caller speaks (browser mic) or uploads an audio file. Typed input always works as a fallback.
-2. **Deepgram** transcribes audio to text in real time using the nova-2 streaming model — no button press, no upload wait.
-3. **Router agent** classifies the message and delegates to exactly one specialist — it triages, it does not answer.
-4. **Specialist agent** (Claims / Billing / Policy / General) answers using only the knowledge base via RAG — it cannot invent policy terms or amounts.
-5. **Escalation agent** takes over when a human is needed, producing the spoken handoff line and a written briefing for the agent.
-6. **Compliance Guard** inspects every candidate reply against EU AI Act Art. 52 and GDPR — passing it through or rewriting it — *before anything is spoken to the caller*.
-7. **ElevenLabs** converts the approved reply to natural speech. The caller hears it.
-
----
-
-## Multi-Agent Architecture
-
-InsurVoice is not a single agent — it is a coordinated **team of specialized subagents**:
-
-| Agent | Responsibility |
-|---|---|
-| **Router** | Triages each message; delegates to the right specialist. Does not answer. |
-| **Claims** | Filing claims, claim status, documents, timelines. |
-| **Billing** | Premiums, invoices, payments, price changes. |
-| **Policy** | Coverage, limits, renewals, cancellations. |
-| **General** | Greetings, opening hours, general info. |
-| **Escalation** | Human handoff line + a briefing that omits personal identifiers. |
-| **Compliance Guard** | Checks every reply — AI-identity, no binding decisions, no PII read-aloud — fast deterministic rules first, LLM rewrite only if a flag fires. |
-| **Orchestrator** | Runs the pipeline, keeps memory, returns an `agent_trace` the UI renders live. |
-
-Full detail in [`mvp/agents/ARCHITECTURE.md`](mvp/agents/ARCHITECTURE.md).
+A multi-agent voice system: speak → transcribe → reason → comply → speak back.  
+Optionally rendered as an animated avatar. EU AI Act & GDPR compliant.
 
 ---
 
 ## Live Demo
 
-🚀 **[Launch InsurVoice AI on Render](https://insurvoice-ai.onrender.com)** ← update after deploy
+🚀 **[Launch InsurVoice AI](https://insurvoice-ai.onrender.com)** — voice interface  
+🎭 **[Launch with Avatar](https://insurvoice-ai.onrender.com/avatar)** — lip-synced face
 
-*First load ~30s (free tier). Add your three API keys in `.env`.*
+*First load ~30s on free tier.*
+
+---
+
+## Architecture
+
+![InsurVoice AI System Architecture](architecture.png)
+
+**Turn flow:**
+1. **Caller speaks** → Deepgram nova-3 transcribes in real time (streaming, no button press)
+2. **langdetect** identifies language (EN/DE/ES/FR/IT) from transcript
+3. **Router agent** classifies intent and delegates to one specialist
+4. **Specialist agent** answers using 154-FAQ knowledge base via keyword RAG (Claude claude-opus-4-6)
+5. **Escalation agent** handles human handoff with a written briefing for the receiving agent
+6. **Compliance Guard** inspects every reply — EU AI Act Art. 52 + GDPR — before it is spoken
+7. **ElevenLabs** converts the approved text to natural speech in the detected language
+8. **Simli** (optional) renders a lip-synced avatar video stream via WebRTC
+
+---
+
+## Demo Script
+
+Use these phrases to show every feature of the system:
+
+### Core voice pipeline
+> *"Does my home insurance cover a burst pipe?"*
+
+Expected: routes to **policy** specialist, answers about Leitungswasser cover, deductible
+
+> *"How do I file a claim?"*
+
+Expected: routes to **claims** specialist, explains three ways to file
+
+> *"Why has my premium increased?"*
+
+Expected: routes to **billing** specialist, explains renewal review
+
+### Multi-language (type if STT struggles)
+> *"Wie melde ich einen Schaden?"*
+
+Expected: langdetect → German, reply in German from claims specialist
+
+> *"¿Cómo presento una reclamación?"*
+
+Expected: langdetect → Spanish, reply in Spanish
+
+### Compliance Guard
+> *"Are you a real person?"*
+
+Expected: **must** identify as AI (EU AI Act Art. 52 enforcement)
+
+> *"Is my claim definitely approved?"*
+
+Expected: **cannot** give a binding decision — compliance guard blocks this
+
+### Escalation
+> *"I want to speak to a human agent"*
+
+Expected: graceful escalation with written handoff briefing visible in UI
+
+> *"I'm very frustrated with how this has been handled"*
+
+Expected: escalation after empathetic response
+
+### Show the pipeline trace
+After any reply, the **⚙ Multi-agent pipeline** panel shows:
+- Which agent was called
+- What intent was classified
+- Whether ComplianceGuard passed
+
+This is the live multi-agent routing — point this out to examiners.
 
 ---
 
 ## Tech Stack
 
-| Layer | Tool |
+| Layer | Technology |
 |---|---|
-| **Speech-to-text** | Deepgram (`nova-2`, live WebSocket streaming) |
-| **Reasoning / agents** | Anthropic Claude `claude-opus-4-6` |
-| **Text-to-speech** | ElevenLabs (`eleven_turbo_v2_5`) |
-| **Knowledge retrieval** | RAG over insurance FAQ knowledge base |
-| **Web interface** | Flask + SocketIO + custom HTML (API keys server-side) |
-| **Quick demo** | Streamlit (`mvp/app.py`) |
-| **Deployment** | Render.com (free tier) |
-| **POC orchestration** | Voiceflow + n8n (see `poc/`) |
+| Speech-to-text | Deepgram nova-3 (live WebSocket streaming) |
+| Language detection | langdetect (Python, client-side) |
+| Reasoning / agents | Anthropic Claude claude-opus-4-6 |
+| Text-to-speech | ElevenLabs (eleven_turbo_v2_5, multilingual) |
+| Avatar | Simli WebRTC (lip-synced, LiveKit transport) |
+| Knowledge retrieval | Keyword RAG, 154-FAQ knowledge base |
+| Web interface | Flask + SocketIO + custom HTML/JS |
+| Compliance | EU AI Act Art. 52 + GDPR enforced at runtime |
+| Deployment | Render.com |
+| POC orchestration | Voiceflow + n8n (see `poc/`) |
 
 ---
 
@@ -75,42 +108,45 @@ Full detail in [`mvp/agents/ARCHITECTURE.md`](mvp/agents/ARCHITECTURE.md).
 
 ```
 insurvoice-ai/
-├── architecture.png               # system & data architecture diagram
-├── banner.png                     # project banner
-├── use_case_definition.md
+├── architecture.png               # system architecture diagram
+├── README.md
+├── use_case_definition.md         # business case + problem statement
 ├── roi_risk_assessment.md
 ├── strategic_plan.md
-├── poc/
-│   ├── poc_workflow.json
-│   └── poc_documentation.md
 ├── compliance/
 │   ├── eu_ai_act_compliance.md
 │   └── gdpr_documentation.md
-├── mvp/
-│   ├── agents/                    # multi-agent system
-│   │   ├── orchestrator.py
-│   │   ├── router.py
-│   │   ├── specialists.py
-│   │   ├── escalation.py
-│   │   ├── compliance_guard.py
-│   │   ├── base.py
-│   │   └── ARCHITECTURE.md
-│   ├── voice.py                   # ElevenLabs TTS
-│   ├── knowledge.py               # RAG knowledge base
-│   ├── app.py                     # Streamlit interface
-│   ├── download_data.py
-│   ├── requirements.txt
-│   └── web/                       # Flask + HTML voice interface ⭐
-│       ├── server.py              # Flask + SocketIO server
-│       ├── stream.py              # Deepgram live streaming STT
-│       ├── agents/                # agent package copy (for Render deploy)
-│       ├── templates/index.html   # purple voice UI with live trace panel
-│       ├── knowledge.py
-│       ├── voice.py
-│       ├── requirements.txt
-│       ├── render.yaml
-│       └── .env.example
-└── README.md
+├── poc/
+│   ├── poc_workflow.json
+│   └── poc_documentation.md
+└── mvp/
+    ├── agents/                    # multi-agent system
+    │   ├── orchestrator.py        # turn manager, language, history
+    │   ├── router.py              # intent classification
+    │   ├── specialists.py         # claims/billing/policy/general
+    │   ├── escalation.py          # human handoff
+    │   ├── compliance_guard.py    # EU AI Act + GDPR checker
+    │   ├── base.py
+    │   └── ARCHITECTURE.md
+    ├── voice.py                   # ElevenLabs TTS
+    ├── knowledge.py               # RAG retrieval
+    ├── data/knowledge_base.json   # 154 insurance FAQs
+    ├── app.py                     # Streamlit demo interface
+    ├── evaluate.py                # accuracy evaluation (30 test cases)
+    └── web/                       # Flask + HTML voice interface ⭐
+        ├── server.py              # Flask + SocketIO, all API keys server-side
+        ├── stream.py              # Deepgram nova-3 live WebSocket STT
+        ├── agents/                # agent package (mirrored for Render deploy)
+        ├── static/
+        │   └── simli-client.js    # Simli WebRTC SDK (bundled)
+        ├── templates/
+        │   ├── index.html         # voice-only interface
+        │   └── avatar.html        # Simli lip-synced avatar interface
+        ├── data/
+        │   └── knowledge_base.json
+        ├── evaluate.py            # run accuracy evaluation
+        ├── requirements.txt
+        └── render.yaml
 ```
 
 ---
@@ -121,44 +157,52 @@ insurvoice-ai/
 git clone https://github.com/dbystrova26/insurvoice-ai.git
 cd insurvoice-ai/mvp/web
 pip install -r requirements.txt
-cp .env.example .env       # add your 3 keys (see below)
+cp .env.example .env    # fill in your API keys
 python download_data.py
-python server.py           # http://localhost:5000
+python server.py
 ```
 
-**Three API keys needed** (all have free tiers):
+Open **http://localhost:5000** (voice) or **http://localhost:5000/avatar** (avatar).
 
-| Key | Service | Get it at |
+### Required API keys
+
+| Key | Service | Free tier |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | Claude — reasoning | console.anthropic.com |
-| `DEEPGRAM_API_KEY` | Live speech-to-text | console.deepgram.com |
-| `ELEVENLABS_API_KEY` | Voice replies | elevenlabs.io/app/developers |
+| `ANTHROPIC_API_KEY` | Claude reasoning | console.anthropic.com |
+| `DEEPGRAM_API_KEY` | Live speech-to-text | console.deepgram.com — 12K min/month |
+| `ELEVENLABS_API_KEY` | Voice synthesis | elevenlabs.io — 10K chars/month |
+| `ELEVENLABS_VOICE_ID` | Your voice ID | From ElevenLabs dashboard |
+| `SIMLI_API_KEY` | Avatar (optional) | simli.com — 200 min/month |
+| `SIMLI_FACE_ID` | Avatar face (optional) | From Simli dashboard |
 
 ---
 
-## Deploy to Render
+## Evaluation
 
-1. Push this repo to GitHub
-2. Render → New → Web Service → connect repo
-3. Set **Root Directory** to `mvp/web`
-4. Add the three env vars above
-5. Render reads `render.yaml` — build + start configured automatically
-6. Mic works on the deployed URL — Render provides HTTPS
+Run the accuracy evaluation against 30 test cases:
+
+```bash
+cd mvp/web
+python evaluate.py
+```
+
+Scores: routing accuracy (target ≥85%), keyword coverage (target ≥70%), compliance rate, avg latency. Results saved to `eval_results.json`.
 
 ---
 
 ## Compliance
 
-| Regulation | Status |
-|---|---|
-| EU AI Act | ✅ Limited Risk (Art. 52) — audible AI disclosure at call start; enforced at runtime by the Compliance Guard |
-| GDPR | ✅ Audio streamed then discarded; not stored. Voiceprint not used → not Art. 9 biometric data |
-| Data handling | ✅ API keys server-side only; logs hold intent labels, not message content |
+| Regulation | Status | Implementation |
+|---|---|---|
+| EU AI Act Art. 52 | ✅ Limited Risk | AI identity disclosed on first turn; enforced by ComplianceGuard at runtime |
+| GDPR | ✅ Compliant | Audio streamed then discarded; no storage; no biometric profiling |
+| Data minimisation | ✅ Applied | Only intent labels logged, not message content |
 
 ---
 
 ## Author
 
-**Daria Bystrova** · Ironhack AI Consulting Bootcamp · 2025
+**Daria Bystrova** · Ironhack AI Consulting Bootcamp · 2025  
+GitHub: [github.com/dbystrova26/insurvoice-ai](https://github.com/dbystrova26/insurvoice-ai)
 
-*Student project / proof of concept. Allianz Direct is a fictional scenario. Not affiliated with Anthropic, Deepgram, or ElevenLabs.*
+*Fictional scenario. Not affiliated with Anthropic, Deepgram, ElevenLabs, or Simli.*
