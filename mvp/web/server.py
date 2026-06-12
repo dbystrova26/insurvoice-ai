@@ -54,15 +54,34 @@ def _get_agent(sid: str) -> Orchestrator:
     return _agents[sid]
 
 
-def _run_turn(sid: str, transcript: str, socket_id: str):
+def _run_turn(sid: str, transcript: str, socket_id: str, language: str = "en"):
     """Run a full agent turn and emit the result back to the browser."""
     transcript = transcript.strip()
-    # Ignore empty or very short transcripts (noise, breathing, background sounds)
     if not transcript or len(transcript) < 4:
         return
-    # Ignore transcripts that look like technical artifacts not real speech
     if transcript.lower() in {"the", "a", "uh", "um", "hmm", "oh", "ah"}:
         return
+    socketio.emit("transcript", {"text": transcript, "language": language}, room=socket_id)
+    agent = _get_agent(sid)
+    # Pass detected language so agent replies in same language
+    result = agent.respond(transcript, language=language)
+    audio_b64 = None
+    if ELEVENLABS_KEY:
+        tts = synthesize_elevenlabs(result["response"], ELEVENLABS_KEY, VOICE_ID)
+        if tts["success"]:
+            audio_b64 = base64.b64encode(tts["audio"]).decode()
+    socketio.emit("reply", {
+        "transcript": transcript,
+        "reply": result["response"],
+        "intent": result.get("intent", ""),
+        "route": result.get("route", ""),
+        "language": language,
+        "escalated": result.get("should_escalate", False),
+        "handoff_summary": result.get("handoff_summary"),
+        "agent_trace": result.get("agent_trace", []),
+        "compliance": result.get("compliance", {}),
+        "audio_base64": audio_b64,
+    }, room=socket_id)
     socketio.emit("transcript", {"text": transcript}, room=socket_id)
     agent = _get_agent(sid)
     result = agent.respond(transcript)
@@ -192,11 +211,11 @@ def on_start_stream():
     if sid in _streams:
         _streams[sid].stop()
 
-    def on_transcript(text: str, is_final: bool):
+    def on_transcript(text: str, is_final: bool, language: str = "en"):
         if is_final:
             import threading
             threading.Thread(
-                target=_run_turn, args=(sid, text, socket_id), daemon=True
+                target=_run_turn, args=(sid, text, socket_id, language), daemon=True
             ).start()
         else:
             socketio.emit("partial_transcript", {"text": text}, room=socket_id)
