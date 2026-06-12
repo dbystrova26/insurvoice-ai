@@ -1,6 +1,11 @@
+flask>=3.0.0
+flask-socketio>=5.3.0
+python-socketio>=5.11.0
+eventlet>=0.35.0
+gunicorn>=21.2.0
 anthropic>=0.25.0
-streamlit>=1.35.0
-streamlit-mic-recorder>=0.0.8
+deepgram-sdk>=3.0.0
 requests>=2.31.0
+websockets>=12.0
 python-dotenv>=1.0.0
-pandas>=2.0.0
+langdetect>=1.0.9

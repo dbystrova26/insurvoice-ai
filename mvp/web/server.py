@@ -236,13 +236,15 @@ def on_audio_chunk(data):
 
 @socketio.on("resume_stream")
 def on_resume_stream():
-    """Resume Deepgram after TTS audio finishes playing."""
+    """Resume listening after TTS finishes — reuse existing stream if alive."""
+    sid = _sid()
+    socket_id = request.sid
+    # If stream is still alive, just keep it running — no need to restart
+    if sid in _streams and _streams[sid].is_alive():
+        return
+    # Stream died — restart it
     if not DEEPGRAM_KEY:
         return
-    socket_id = request.sid
-    sid = _sid()
-    if sid in _streams:
-        _streams[sid].stop()
 
     def on_transcript(text: str, is_final: bool, language: str = "en"):
         if is_final:
