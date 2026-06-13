@@ -1,0 +1,231 @@
+{
+  "name": "InsurVoice AI — Call Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "insurvoice-call",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Call Ended Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "insurvoice-call"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({status: 'received', call_id: $json.call_id}) }}",
+        "options": {}
+      },
+      "id": "webhook-response",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [460, 160]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "escalated-check",
+              "leftValue": "={{ $json.escalated }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "escalation-check",
+      "name": "Was Escalated?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 380]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_HERE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Call Log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Timestamp": "={{ $json.timestamp }}",
+            "Call ID": "={{ $json.call_id }}",
+            "Customer Name": "={{ $json.customer_name || 'Unknown' }}",
+            "Customer Email": "={{ $json.customer_email || '' }}",
+            "Language": "={{ $json.language || 'en' }}",
+            "Intent": "={{ $json.intent }}",
+            "Route": "={{ $json.route }}",
+            "Escalated": "={{ $json.escalated ? 'YES' : 'NO' }}",
+            "Resolved": "={{ $json.resolved ? 'YES' : 'NO' }}",
+            "Turns": "={{ $json.turn_count }}",
+            "Duration (s)": "={{ $json.duration_seconds }}",
+            "Compliance": "={{ $json.compliance_passed ? 'PASS' : 'FAIL' }}",
+            "Summary": "={{ $json.summary }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "sheets-log",
+      "name": "Log to Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [700, 220],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.customer_email }}",
+        "subject": "Your InsurVoice AI call summary — {{ $json.timestamp }}",
+        "emailType": "html",
+        "message": "=<html>\n<body style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #333;\">\n  <div style=\"background: #6D4AFF; padding: 20px; border-radius: 8px 8px 0 0;\">\n    <h1 style=\"color: white; margin: 0; font-size: 22px;\">InsurVoice AI — Call Summary</h1>\n    <p style=\"color: #C7B8FF; margin: 4px 0 0;\">Allianz Direct · AI Assistant</p>\n  </div>\n  <div style=\"background: #f9f9f9; padding: 24px; border: 1px solid #eee; border-radius: 0 0 8px 8px;\">\n    <p>Dear {{ $json.customer_name || 'Valued Customer' }},</p>\n    <p>Thank you for contacting InsurVoice AI. Here is a summary of your call:</p>\n    <table style=\"width: 100%; border-collapse: collapse; margin: 16px 0;\">\n      <tr style=\"background: #f0f0f0;\">\n        <td style=\"padding: 8px 12px; font-weight: bold; width: 40%;\">Date &amp; Time</td>\n        <td style=\"padding: 8px 12px;\">{{ $json.timestamp }}</td>\n      </tr>\n      <tr>\n        <td style=\"padding: 8px 12px; font-weight: bold;\">Topic</td>\n        <td style=\"padding: 8px 12px;\">{{ $json.intent }}</td>\n      </tr>\n      <tr style=\"background: #f0f0f0;\">\n        <td style=\"padding: 8px 12px; font-weight: bold;\">Language</td>\n        <td style=\"padding: 8px 12px;\">{{ $json.language === 'de' ? 'German' : $json.language === 'es' ? 'Spanish' : $json.language === 'fr' ? 'French' : 'English' }}</td>\n      </tr>\n      <tr>\n        <td style=\"padding: 8px 12px; font-weight: bold;\">Resolved</td>\n        <td style=\"padding: 8px 12px;\">{{ $json.resolved ? '✅ Yes' : '⏳ Referred to specialist' }}</td>\n      </tr>\n    </table>\n    <div style=\"background: #EDE8FC; padding: 16px; border-radius: 6px; margin: 16px 0;\">\n      <strong>Summary:</strong><br>\n      {{ $json.summary }}\n    </div>\n    {{ $json.escalated ? '<div style=\"background: #FBF1DC; padding: 16px; border-radius: 6px; border-left: 4px solid #E6C887;\"><strong>⚡ Your call has been escalated</strong><br>A human agent will follow up with you within 2 business hours.</div>' : '' }}\n    <hr style=\"border: none; border-top: 1px solid #eee; margin: 20px 0;\">\n    <p style=\"color: #888; font-size: 12px;\">This call was handled by InsurVoice AI, an automated assistant for Allianz Direct. Call reference: {{ $json.call_id }}<br>\n    AI identity disclosed in line with EU AI Act Article 52. Audio not retained (GDPR compliant).</p>\n  </div>\n</body>\n</html>",
+        "options": {}
+      },
+      "id": "email-customer",
+      "name": "Email Customer Summary",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [700, 380],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_GMAIL_CREDENTIAL_ID",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "agent@your-company.com",
+        "subject": "=⚡ ESCALATION — {{ $json.intent }} — {{ $json.customer_name || 'Unknown customer' }}",
+        "emailType": "html",
+        "message": "=<html>\n<body style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #333;\">\n  <div style=\"background: #FF6B35; padding: 20px; border-radius: 8px 8px 0 0;\">\n    <h1 style=\"color: white; margin: 0; font-size: 20px;\">⚡ Escalation Required</h1>\n    <p style=\"color: #FFE0D0; margin: 4px 0 0;\">InsurVoice AI · Human handoff</p>\n  </div>\n  <div style=\"background: #fff8f5; padding: 24px; border: 1px solid #ffd0b0; border-radius: 0 0 8px 8px;\">\n    <h2 style=\"color: #FF6B35; margin-top: 0;\">Agent Briefing</h2>\n    <table style=\"width: 100%; border-collapse: collapse; margin: 16px 0;\">\n      <tr style=\"background: #f0f0f0;\">\n        <td style=\"padding: 8px 12px; font-weight: bold; width: 35%;\">Customer</td>\n        <td style=\"padding: 8px 12px;\">{{ $json.customer_name || 'Not identified' }}</td>\n      </tr>\n      <tr>\n        <td style=\"padding: 8px 12px; font-weight: bold;\">Email</td>\n        <td style=\"padding: 8px 12px;\">{{ $json.customer_email || 'Not provided' }}</td>\n      </tr>\n      <tr style=\"background: #f0f0f0;\">\n        <td style=\"padding: 8px 12px; font-weight: bold;\">Topic</td>\n        <td style=\"padding: 8px 12px;\">{{ $json.intent }}</td>\n      </tr>\n      <tr>\n        <td style=\"padding: 8px 12px; font-weight: bold;\">Language</td>\n        <td style=\"padding: 8px 12px;\">{{ $json.language }}</td>\n      </tr>\n      <tr style=\"background: #f0f0f0;\">\n        <td style=\"padding: 8px 12px; font-weight: bold;\">Turns</td>\n        <td style=\"padding: 8px 12px;\">{{ $json.turn_count }}</td>\n      </tr>\n      <tr>\n        <td style=\"padding: 8px 12px; font-weight: bold;\">Priority</td>\n        <td style=\"padding: 8px 12px; color: {{ $json.urgency === 'high' ? '#CC0000' : $json.urgency === 'medium' ? '#FF6B35' : '#888' }}; font-weight: bold;\">\n          {{ $json.urgency === 'high' ? '🔴 HIGH' : $json.urgency === 'medium' ? '🟡 MEDIUM' : '🟢 LOW' }}\n        </td>\n      </tr>\n    </table>\n    <div style=\"background: #fff0e0; padding: 16px; border-radius: 6px; border-left: 4px solid #FF6B35; margin: 16px 0;\">\n      <strong>AI Agent Briefing:</strong><br><br>\n      {{ $json.handoff_summary }}\n    </div>\n    <div style=\"background: #f5f5f5; padding: 16px; border-radius: 6px; margin: 16px 0;\">\n      <strong>Conversation Summary:</strong><br><br>\n      {{ $json.summary }}\n    </div>\n    <p style=\"color: #888; font-size: 12px;\">Call ID: {{ $json.call_id }} · {{ $json.timestamp }}<br>\n    Generated by InsurVoice AI · Allianz Direct</p>\n  </div>\n</body>\n</html>",
+        "options": {}
+      },
+      "id": "email-agent",
+      "name": "Email Agent Briefing",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [940, 300],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_GMAIL_CREDENTIAL_ID",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "channel": "#insurvoice-alerts",
+        "text": "=⚡ *ESCALATION* — {{ $json.urgency === 'high' ? '🔴 HIGH PRIORITY' : $json.urgency === 'medium' ? '🟡 MEDIUM' : '🟢 LOW' }}\n\n*Customer:* {{ $json.customer_name || 'Unknown' }}\n*Topic:* {{ $json.intent }}\n*Language:* {{ $json.language }}\n*Turns before escalation:* {{ $json.turn_count }}\n\n*Brief:* {{ $json.handoff_summary }}\n\n📧 Full briefing sent to your email · Call ID: `{{ $json.call_id }}`",
+        "otherOptions": {}
+      },
+      "id": "slack-alert",
+      "name": "Slack Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [940, 480],
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "YOUR_SLACK_CREDENTIAL_ID",
+          "name": "Slack account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Call Ended Webhook": {
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Was Escalated?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log to Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Was Escalated?": {
+      "main": [
+        [
+          {
+            "node": "Email Customer Summary",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Email Customer Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Customer Summary": {
+      "main": [
+        [
+          {
+            "node": "Email Agent Briefing",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["insurvoice", "insurance", "ai-agent"],
+  "triggerCount": 1,
+  "updatedAt": "2025-06-01T00:00:00.000Z",
+  "versionId": "1"
+}

@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 from agents import Orchestrator
 from voice import synthesize_elevenlabs, DEFAULT_VOICE_ID
 from stream import DeepgramStreamSession, transcribe_streaming_chunk
+from n8n_integration import fire_n8n_webhook
 
 load_dotenv()
 
@@ -28,6 +29,7 @@ DEEPGRAM_KEY   = os.getenv("DEEPGRAM_API_KEY", "")
 VOICE_ID       = os.getenv("ELEVENLABS_VOICE_ID", DEFAULT_VOICE_ID)
 SIMLI_API_KEY  = os.getenv("SIMLI_API_KEY", "")
 SIMLI_FACE_ID  = os.getenv("SIMLI_FACE_ID", "")
+N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
 
 _agents: dict[str, Orchestrator] = {}
 _streams: dict[str, DeepgramStreamSession] = {}
@@ -71,18 +73,37 @@ def _run_turn(sid: str, transcript: str, socket_id: str, language: str = "en"):
         if tts["success"]:
             audio_b64 = base64.b64encode(tts["audio"]).decode()
 
+    escalated = result.get("should_escalate", False)
     socketio.emit("reply", {
         "transcript": transcript,
         "reply": result["response"],
         "intent": result.get("intent", ""),
         "route": result.get("route", ""),
         "language": language,
-        "escalated": result.get("should_escalate", False),
+        "escalated": escalated,
         "handoff_summary": result.get("handoff_summary"),
         "agent_trace": result.get("agent_trace", []),
         "compliance": result.get("compliance", {}),
         "audio_base64": audio_b64,
     }, room=socket_id)
+
+    # Fire n8n webhook (non-blocking background thread)
+    if N8N_WEBHOOK_URL:
+        agent_obj = _get_agent(sid)
+        fire_n8n_webhook(
+            call_id=f"{sid[:8]}-{int(time.time())}",
+            intent=result.get("intent", "unknown"),
+            route=result.get("route", "general"),
+            language=language,
+            turn_count=getattr(agent_obj, "turn_count", 1),
+            resolved=result.get("resolved", False),
+            escalated=escalated,
+            handoff_summary=result.get("handoff_summary", ""),
+            compliance_passed=result.get("compliance", {}).get("compliant", True),
+            conversation_history=getattr(agent_obj, "history", []),
+            customer_name=getattr(agent_obj, "customer_name", None),
+            customer_email=getattr(agent_obj, "customer_email", None),
+        )
 
 
 @app.route("/")
