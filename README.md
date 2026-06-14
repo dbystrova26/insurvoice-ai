@@ -22,30 +22,47 @@ Speak naturally → Tina hears you → looks up your policy → reasons through 
 
 ![System Architecture](architecture.png)
 
-**Every call flows through this pipeline:**
+> **Full diagram:** [architecture.png](architecture.png) — shows the complete pipeline including Supabase CRM and n8n automation layer.
+
+### Voice Pipeline
 
 ```
-You speak
+You speak / type
     ↓
-Deepgram nova-3 — live streaming STT, accent-robust
+Deepgram nova-3 ── live streaming STT, accent-robust, no button press
     ↓
-langdetect — auto-detects EN / DE / ES / FR / IT
+langdetect ──────── auto-detects EN / DE / ES / FR / IT from transcript
     ↓
-Supabase CRM — looks up your policy by name + policy number
+Supabase CRM ────── looks up customer by name + policy number (PostgreSQL)
     ↓
-Router agent — classifies intent, delegates to specialist
+Tina Orchestrator ─ greeting → language select → CRM → route → specialist
+    │
+    ├── Router agent ────────── classifies intent
+    ├── Claims specialist ───── filing, status, documents
+    ├── Billing specialist ───── premiums, payments, invoices
+    ├── Policy specialist ────── coverage, renewals, cancellations
+    ├── General specialist ───── hours, contacts, portal
+    ├── Escalation agent ─────── human handoff + written briefing
+    └── Compliance Guard ─────── EU AI Act Art. 52 + GDPR check
     ↓
-Specialist agent (Claude claude-opus-4-6) — answers using 154-FAQ knowledge base
+ElevenLabs TTS ──── text → spoken voice in detected language
     ↓
-ComplianceGuard — EU AI Act Art. 52 + GDPR check before speaking
+Simli WebRTC ────── lip-synced avatar face (optional)
     ↓
-ElevenLabs TTS — converts reply to natural speech in detected language
-    ↓
-Simli WebRTC — lip-synced avatar (optional)
-    ↓
-You hear Tina's answer
-    ↓
-n8n — logs call to Google Sheets, sends email summary, Slack alert if escalated
+You hear + see Tina's answer
+```
+
+### Automation Layer (fires after every turn)
+
+```
+Tina Orchestrator
+    ↓ (n8n webhook, non-blocking background thread)
+n8n Workflow
+    ├── Google Sheets ── logs every call (intent, route, language, escalated, summary)
+    ├── Gmail ────────── sends HTML call summary to customer
+    ├── Gmail ────────── if escalated: sends full agent briefing
+    ├── Slack ────────── if escalated: posts to #insurvoice-alerts with urgency
+    └── Supabase ─────── call_log table updated (PostgreSQL)
 ```
 
 ---
