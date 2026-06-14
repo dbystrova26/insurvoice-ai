@@ -5,7 +5,7 @@
 **AI voice agent for insurance customer service — meet Tina.**
 Ironhack AI Consulting Bootcamp · Final Project · Daria Bystrova
 
-Speak naturally → Tina hears you → looks up your policy → reasons through specialists → checks compliance → speaks back in your language. Optionally rendered as a lip-synced avatar.
+AI voice agent for insurance customer service built as an Ironhack AI Consulting Capstone Project. Speak naturally in any language and Tina, a lip-synced avatar, hears you via live speech recognition (Deepgram), reasons through a multi-agent pipeline (Claude), retrieves answers from a 154-FAQ knowledge base, looks up your policy from a CRM database (Supabase), and speaks back in your language (ElevenLabs). Every escalation automatically triggers an n8n workflow — Gmail briefing, Google Sheets log, and a Slack alert. EU AI Act Article 52 and GDPR compliant by design.
 
 ---
 
