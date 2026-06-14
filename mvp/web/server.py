@@ -50,18 +50,20 @@ def _get_agent(sid: str) -> Orchestrator:
 
 def _run_turn(sid: str, transcript: str, socket_id: str, language: str = "en"):
     transcript = transcript.strip()
-    if not transcript or len(transcript) < 4:
-        return
-    if transcript.lower() in {"the", "a", "uh", "um", "hmm", "oh", "ah"}:
-        return
-    now = time.time()
-    last_text, last_time = _last_turn.get(sid, ("", 0))
-    if (now - last_time) < 4.0:
-        if transcript == last_text:
+    # Allow __greet__ trigger to pass through
+    if transcript != "__greet__":
+        if not transcript or len(transcript) < 4:
             return
-        if transcript.lower() in last_text.lower() or last_text.lower() in transcript.lower():
+        if transcript.lower() in {"the", "a", "uh", "um", "hmm", "oh", "ah"}:
             return
-    _last_turn[sid] = (transcript, now)
+        now = time.time()
+        last_text, last_time = _last_turn.get(sid, ("", 0))
+        if (now - last_time) < 4.0:
+            if transcript == last_text:
+                return
+            if transcript.lower() in last_text.lower() or last_text.lower() in transcript.lower():
+                return
+        _last_turn[sid] = (transcript, now)
 
     socketio.emit("transcript", {"text": transcript, "language": language}, room=socket_id)
     agent = _get_agent(sid)
@@ -262,6 +264,15 @@ def on_connect():
         "simli_api_key": SIMLI_API_KEY,
         "simli_face_id": SIMLI_FACE_ID,
     })
+    # Auto-greet — fire Tina's opening line immediately on connection
+    import threading
+    sid = _sid()
+    socket_id = request.sid
+    def _auto_greet():
+        import time
+        time.sleep(2)  # wait for Simli avatar to connect
+        _run_turn(sid, "__greet__", socket_id, "en")
+    threading.Thread(target=_auto_greet, daemon=True).start()
 
 
 @socketio.on("start_stream")
