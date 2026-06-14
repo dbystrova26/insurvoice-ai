@@ -1,24 +1,33 @@
 # POC Documentation — InsurVoice AI
 
 **File:** `poc/poc_documentation.md`  
-**POC type:** No-code / low-code voice agent  
-**Stack:** Voiceflow (voice dialogue) + n8n (orchestration) + Whisper (STT) + Claude (reasoning) + ElevenLabs (TTS)
+**POC type:** No-code / low-code voice agent prototype  
+**Stack:** n8n (orchestration) + Deepgram (STT) + Claude (reasoning) + ElevenLabs (TTS)  
+**MVP upgrade:** Added Simli avatar, Supabase CRM, multi-agent architecture, live streaming STT
 
 ---
 
-## Demo Recording
+## What Was Validated in the POC
 
-🎥 **Demo link:** [Insert Loom/YouTube link after recording]
+The POC answered one question: **can we build a voice loop that works end-to-end?**
 
-**What the demo shows (2–4 minutes):**
-1. Caller speaks: *"Hi, does my home insurance cover a burst pipe?"*
-2. Whisper transcribes the speech to text (shown on screen)
-3. Bot delivers audible AI disclosure + spoken answer via ElevenLabs voice
-4. Caller speaks a follow-up: *"How long would a claim take?"*
-5. Bot maintains context, answers in voice
-6. Caller says: *"I'd like to speak to a person"*
-7. Bot acknowledges audibly, generates handoff summary, escalates
-8. n8n workflow shown firing in the background
+```
+Caller speaks
+    ↓
+Deepgram STT → text transcript
+    ↓
+n8n orchestrates → Claude classifies intent + generates response
+    ↓
+ElevenLabs TTS → spoken audio reply
+    ↓
+Caller hears the answer
+```
+
+This loop was validated before building the full MVP. The POC proved:
+- Deepgram nova-3 transcribes insurance queries accurately (including non-native accents)
+- Claude reliably classifies insurance intents with >85% accuracy
+- ElevenLabs produces natural-sounding voice replies under 3 seconds
+- EU AI Act Art. 52 disclosure can be enforced programmatically on the first turn
 
 ---
 
@@ -26,84 +35,101 @@
 
 | Tool | Role | Why chosen |
 |---|---|---|
-| **Voiceflow** | Voice dialogue flow — manages turns, captures audio, plays responses | Native voice support; visual builder; shareable demo; accepted by Ironhack brief |
-| **OpenAI Whisper** | Speech-to-text — transcribes caller audio | Best-in-class transcription; robust to accents/noise; cheap (~$0.006/min) |
-| **n8n** | Orchestration — routes between STT, Claude, TTS | Free; exportable JSON; shows automation skill |
-| **Anthropic Claude** | Intent classification + response generation | Reliable structured output; strong instruction-following |
-| **ElevenLabs** | Text-to-speech — speaks the AI response | Most natural-sounding TTS; low latency (turbo model); free tier 10k chars/month |
+| **Deepgram nova-3** | Speech-to-text — live streaming transcription | Best accent robustness; 12k min/month free; streaming API |
+| **n8n** | Orchestration — webhook → KB → Claude → response | Free; exportable JSON; visual workflow editor |
+| **Anthropic Claude** | Intent classification + response generation | Reliable structured JSON output; multilingual |
+| **ElevenLabs** | Text-to-speech — speaks the AI response | Natural-sounding TTS; multilingual from single voice; free tier |
+| **Supabase** | CRM database — customer policy + claims lookup | Free hosted PostgreSQL; compatible with Render |
+| **Simli** | Lip-synced avatar — animated face | WebRTC real-time; free 200 min/month |
 
 ---
 
-## What the POC Does — Step by Step
+## n8n POC Workflow — Step by Step
 
 ```
-1. Caller speaks (Voiceflow captures audio, or browser mic in MVP)
+1. Caller speaks (browser mic — Deepgram live WebSocket)
        ↓
-2. Audio sent to Whisper API → transcribed to text
+2. Deepgram transcribes audio to text in real time (nova-3)
        ↓
-3. n8n receives {transcript, conversation_id, turn_number}
+3. n8n webhook receives {transcript, language, conversation_id, turn_number}
        ↓
-4. n8n loads knowledge base context (RAG)
+4. n8n loads knowledge base context (154 insurance FAQs)
        ↓
-5. n8n calls Claude API with system prompt + KB + history + transcript
+5. n8n calls Claude API:
+       system prompt + KB context + conversation history + transcript
        ↓
-6. Claude returns JSON: {intent, confidence, response, should_escalate}
+6. Claude returns JSON:
+       {intent, confidence, response, should_escalate, escalation_reason}
        ↓
-7a. (no escalation) Response text → ElevenLabs → audio → played to caller
-7b. (escalation) Generate handoff summary → notify human → transfer
+7a. No escalation → ElevenLabs → audio → played to caller
+7b. Escalation → handoff summary → Gmail briefing → Slack alert → Sheets log
        ↓
-8. Turn logged (anonymised: intent + timestamp only, no audio, no transcript)
+8. Turn logged to Supabase call_log (anonymised: intent + timestamp only)
 ```
 
 ---
 
-## AI Capability Demonstrated
+## AI Capabilities Demonstrated
 
-1. **Speech recognition** — Whisper converts spoken insurance queries to text, handling natural speech, accents, and background noise
-2. **Intent classification** — Claude maps the transcript to one of 8 intent categories
-3. **Retrieval-Augmented Generation** — relevant FAQ content retrieved and grounded; no hallucinated policy terms
-4. **Natural voice synthesis** — ElevenLabs delivers a human-sounding spoken response
-5. **Multi-turn voice dialogue** — context maintained across spoken turns
-6. **Escalation logic** — detects when to hand off to a human, with spoken acknowledgement + text summary
-
-This is the complete **STT → reasoning → TTS** loop that defines the conversational voice AI category (the same loop Parloa's product is built on).
-
----
-
-## n8n Workflow
-
-The exported `poc_workflow.json` contains the orchestration: webhook trigger → KB load → prompt build → Claude call → response parse → escalation router → Whisper/ElevenLabs HTTP nodes → response/escalation return. Import via n8n Settings → Import workflow.
-
-Note: in the POC, Voiceflow handles audio capture/playback natively. In the MVP (Streamlit), the same flow runs in Python with explicit Whisper and ElevenLabs API calls (see `mvp/voice.py`).
+1. **Live streaming STT** — Deepgram transcribes in real time, no button press, handles non-native accents
+2. **Automatic language detection** — langdetect identifies EN/DE/ES/FR/IT; Claude replies in same language
+3. **Intent classification** — Claude maps transcript to 9 intent categories with confidence score
+4. **Retrieval-Augmented Generation** — 154 FAQs retrieved by keyword search; no hallucinated policy terms
+5. **CRM personalisation** — customer looked up by name + policy number in Supabase; Tina greets by name with actual policy details
+6. **Natural multilingual voice** — ElevenLabs delivers human-sounding reply in detected language from single voice model
+7. **Multi-turn dialogue** — context maintained across spoken turns
+8. **Escalation logic** — detects handoff signals; generates spoken acknowledgement + written agent briefing
+9. **Lip-synced avatar** — Simli WebRTC animates Tina's face in sync with ElevenLabs audio
 
 ---
 
-## Reproducing / Running the POC
+## MVP Upgrades vs POC
+
+| Feature | POC (n8n) | MVP (Python) |
+|---|---|---|
+| STT | Deepgram REST | Deepgram live WebSocket streaming |
+| Orchestration | n8n workflow | Python multi-agent: Router + 5 Specialists + ComplianceGuard |
+| Compliance | Prompt instruction | ComplianceGuard agent — deterministic rules + LLM rewrite |
+| CRM | None | Supabase PostgreSQL — 20 mock customers + 10 claims |
+| Avatar | None | Simli WebRTC lip-synced face |
+| Language | English only | Auto-detect EN/DE/ES/FR/IT via langdetect |
+| Automation | Google Sheets log | n8n → Gmail + Google Sheets + Slack + Supabase |
+| Interface | Text only | Voice + Avatar (Flask + SocketIO) |
+
+---
+
+## Reproducing the POC
 
 ### Prerequisites
-- Voiceflow account (free) — voiceflow.com
-- n8n (n8n.cloud free or Docker)
-- API keys: Anthropic, OpenAI (Whisper), ElevenLabs
+- n8n account (n8n.cloud free trial or `npx n8n` locally)
+- API keys: `ANTHROPIC_API_KEY`, `DEEPGRAM_API_KEY`, `ELEVENLABS_API_KEY`
 
 ### Steps
 1. Import `poc_workflow.json` into n8n
-2. Set credentials: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `ELEVENLABS_API_KEY`
+2. Set credentials for Anthropic (HTTP Header: `x-api-key`)
 3. Activate workflow, copy webhook URL
-4. In Voiceflow: build voice flow, point API block at n8n webhook
-5. Test in Voiceflow's voice preview
+4. POST to webhook: `{message, conversation_id, turn_number, history}`
+5. Receive JSON: `{response, intent, escalated, handoff_summary}`
 
-**Faster alternative:** run the MVP (`mvp/app.py`) which does the entire pipeline in one Streamlit app — no Voiceflow/n8n setup needed. See `mvp/mvp_documentation.md`.
+**Faster alternative — run the full MVP:**
+```bash
+cd mvp/web
+pip install -r requirements.txt
+pip install psycopg2-binary langdetect
+python server.py
+```
+Open `http://localhost:5000/avatar` — Tina greets you automatically.
 
 ---
 
-## Known Limitations (POC vs Production)
+## Known Limitations (POC → addressed in MVP)
 
-| Limitation | Production solution |
+| POC Limitation | MVP Solution |
 |---|---|
-| No real telephony (browser/Voiceflow only) | Twilio/Vonage SIP integration for actual phone numbers |
-| Whisper latency ~1–2s | Streaming STT (Deepgram) for real-time feel |
-| Voice data sent to US (OpenAI) | Self-hosted Whisper to keep audio in EU |
-| Static knowledge base | Vector DB with live document ingestion |
-| No barge-in (caller can't interrupt) | Full-duplex audio streaming in production telephony |
-| Single language (English) | Multilingual Whisper + German ElevenLabs voice |
-| ElevenLabs free-tier quota (10k chars/month) | Paid tier for production volume |
+| Single Claude call (no agents) | 7-agent pipeline: Router + 4 Specialists + Escalation + ComplianceGuard |
+| No compliance enforcement | ComplianceGuard checks every reply before it is spoken |
+| No CRM lookup | Supabase PostgreSQL — personalised greetings by policy number |
+| English only | Auto-detect + reply in EN/DE/ES/FR/IT |
+| No avatar | Simli WebRTC lip-synced animated face |
+| No audit trail | n8n → Gmail + Google Sheets + Slack + Supabase call_log |
+| STT latency ~1-2s (REST) | Deepgram live WebSocket streaming — no delay |

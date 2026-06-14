@@ -1,226 +1,460 @@
 {
-  "name": "InsurBot AI — Voice Agent Orchestration",
+  "name": "insurvoice-call",
   "nodes": [
     {
       "parameters": {
         "httpMethod": "POST",
-        "path": "insurbot-webhook",
+        "path": "insurvoice-call",
         "responseMode": "responseNode",
         "options": {}
       },
-      "id": "node_webhook_trigger",
-      "name": "Webhook: Receive from Voiceflow",
+      "id": "21a52e7e-443c-43eb-9280-bb15fb4d19c7",
+      "name": "Call Ended Webhook",
       "type": "n8n-nodes-base.webhook",
-      "typeVersion": 1,
-      "position": [240, 300],
-      "notes": "Receives POST from Voiceflow with: {message, conversation_id, turn_number, history}"
+      "typeVersion": 2,
+      "position": [
+        -224,
+        144
+      ],
+      "webhookId": "insurvoice-call"
     },
     {
       "parameters": {
-        "functionCode": "// Load knowledge base context\n// In production: load from vector DB\n// In POC: inline JSON\nconst knowledgeBase = [\n  {\n    topic: 'home_water_damage',\n    q: 'Does home insurance cover water damage from a burst pipe?',\n    a: 'Yes. Burst pipe water damage is covered under Hausratversicherung as Leitungswasser damage. Covers furniture, electronics, personal belongings. EUR 250 deductible applies. Flooding from outside requires separate flood cover.'\n  },\n  {\n    topic: 'claim_process',\n    q: 'How do I file a claim?',\n    a: 'File online at mypolicy.example.com, by calling this line, or email claims@example-insurance.de. You need: policy number, incident date, description, photos if available. Acknowledged within 2 business days.'\n  },\n  {\n    topic: 'claim_timeline',\n    q: 'How long does claim processing take?',\n    a: 'Standard claims: 10-15 business days. Complex claims (>EUR 5,000): up to 30 days. Email updates provided. Urgent claims (emergency repairs) can be fast-tracked.'\n  },\n  {\n    topic: 'policy_renewal',\n    q: 'How do I renew my policy?',\n    a: 'Policies renew automatically. Renewal notice sent 6 weeks before renewal date. To cancel: written notice 4 weeks before renewal date. To update coverage: call or use online portal.'\n  },\n  {\n    topic: 'premium_increase',\n    q: 'Why has my premium increased?',\n    a: 'Premiums change due to: annual market adjustment, changes to risk profile, or a prior claim. Breakdown in renewal letter. Errors can be escalated to billing specialist.'\n  },\n  {\n    topic: 'cancel_policy',\n    q: 'How do I cancel my policy?',\n    a: 'Cancel at annual renewal with 4 weeks written notice. Immediate cancellation possible if risk circumstances change significantly. Send signed letter/email to cancellations@example-insurance.de with policy number.'\n  }\n];\n\nconst kbContext = knowledgeBase\n  .map(item => `Q: ${item.q}\\nA: ${item.a}`)\n  .join('\\n\\n');\n\nreturn [{ json: { ...items[0].json, kbContext } }];"
-      },
-      "id": "node_load_kb",
-      "name": "Load Knowledge Base",
-      "type": "n8n-nodes-base.function",
-      "typeVersion": 1,
-      "position": [460, 300],
-      "notes": "Inline KB for POC. Replace with vector DB query in production."
-    },
-    {
-      "parameters": {
-        "functionCode": "const { message, conversation_id, history, kbContext, turn_number } = items[0].json;\n\nconst historyText = history && history.length > 0\n  ? '\\n\\nConversation so far:\\n' + history.map(t => `${t.role}: ${t.text}`).join('\\n')\n  : '';\n\nconst isFirstTurn = !turn_number || turn_number === 1;\nconst disclosureInstruction = isFirstTurn\n  ? 'IMPORTANT: This is the first turn. You MUST begin your response by identifying yourself as an AI: \"Hi, I am InsurBot, an AI assistant for Allianz Direct.\" This is required by EU AI Act Article 52.'  \n  : 'Do NOT repeat the AI disclosure — you already gave it on the first turn.';\n\nconst systemPrompt = `You are InsurBot, an AI-powered customer service agent for Allianz Direct insurance.\n\n${disclosureInstruction}\n\nYour role:\n- Answer insurance queries accurately using ONLY the knowledge base provided\n- If the answer is not in the knowledge base, say so honestly and offer to escalate\n- Never make up policy terms, coverage details, or claim decisions\n- Be concise, warm, and professional\n- Detect escalation signals: explicit request for human, expressions of anger/distress, legal threats, complaints\n\nKNOWLEDGE BASE:\n${kbContext}\n\nRespond ONLY with a JSON object in this exact format (no markdown):\n{\n  \"intent\": \"<one of: policy_coverage | file_claim | claim_status | billing_query | policy_renewal | cancel_policy | escalate_human | general_info | out_of_scope>\",\n  \"confidence\": <0.0-1.0>,\n  \"response\": \"<your response to the customer>\",\n  \"should_escalate\": <true|false>,\n  \"escalation_reason\": \"<null or brief reason>\"\n}`;\n\nreturn [{ json: { ...items[0].json, systemPrompt, historyText } }];"
-      },
-      "id": "node_build_prompt",
-      "name": "Build Claude Prompt",
-      "type": "n8n-nodes-base.function",
-      "typeVersion": 1,
-      "position": [680, 300]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "https://api.anthropic.com/v1/messages",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "anthropic-version", "value": "2023-06-01" },
-            { "name": "content-type", "value": "application/json" }
-          ]
-        },
-        "sendBody": true,
-        "bodyParameters": {
-          "parameters": [
-            {
-              "name": "model",
-              "value": "claude-opus-4-6"
-            },
-            {
-              "name": "max_tokens",
-              "value": "600"
-            },
-            {
-              "name": "system",
-              "value": "={{ $json.systemPrompt }}"
-            },
-            {
-              "name": "messages",
-              "value": "=[{\"role\": \"user\", \"content\": {{ JSON.stringify($json.message + $json.historyText) }}}]"
-            }
-          ]
-        },
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({status: 'received', call_id: $json.call_id}) }}",
         "options": {}
       },
-      "id": "node_claude_api",
-      "name": "Claude API — Intent + Response",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
-      "position": [900, 300],
-      "notes": "Credential: set ANTHROPIC_API_KEY in n8n credentials as HTTP Header Auth (name: x-api-key)"
-    },
-    {
-      "parameters": {
-        "functionCode": "const raw = items[0].json.content[0].text.trim();\nlet parsed;\ntry {\n  parsed = JSON.parse(raw);\n} catch(e) {\n  // Fallback if Claude wraps in markdown\n  const match = raw.match(/\\{[\\s\\S]*\\}/);\n  parsed = match ? JSON.parse(match[0]) : {\n    intent: 'general_info',\n    confidence: 0.5,\n    response: 'I apologise, I had trouble understanding. Could you rephrase your question?',\n    should_escalate: false,\n    escalation_reason: null\n  };\n}\n\nreturn [{ json: { ...items[0].json, ...parsed } }];"
-      },
-      "id": "node_parse_response",
-      "name": "Parse Claude Response",
-      "type": "n8n-nodes-base.function",
+      "id": "fe442449-8086-487a-9d94-be6662000708",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [1120, 300]
+      "position": [
+        0,
+        0
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "boolean": [
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
             {
-              "value1": "={{ $json.should_escalate }}",
-              "value2": true
+              "id": "escalated-check",
+              "leftValue": "={{ $json.escalated }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
             }
-          ]
-        }
-      },
-      "id": "node_escalation_router",
-      "name": "Escalation Router",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
-      "position": [1340, 300],
-      "notes": "Routes to escalation branch if should_escalate=true"
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ response: $json.response, intent: $json.intent, escalated: false, conversation_id: $json.conversation_id }) }}"
-      },
-      "id": "node_return_response",
-      "name": "Return Response to Voiceflow",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1,
-      "position": [1560, 180]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "https://api.anthropic.com/v1/messages",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "anthropic-version", "value": "2023-06-01" },
-            { "name": "content-type", "value": "application/json" }
-          ]
+          ],
+          "combinator": "and"
         },
-        "sendBody": true,
-        "bodyParameters": {
-          "parameters": [
-            { "name": "model", "value": "claude-opus-4-6" },
-            { "name": "max_tokens", "value": "200" },
-            {
-              "name": "messages",
-              "value": "=[{\"role\": \"user\", \"content\": \"Summarise this customer conversation in 2 sentences for the human agent who will take over. Include the customer's main issue and any key details mentioned.\\n\\nConversation: {{ $json.historyText }}\\nLast message: {{ $json.message }}\\nDetected intent: {{ $json.intent }}\"}]"
-            }
-          ]
-        }
+        "options": {}
       },
-      "id": "node_escalation_summary",
-      "name": "Generate Handoff Summary",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
-      "position": [1560, 420]
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ response: 'Connecting you to a specialist now. Estimated wait: 2-3 minutes. Your reference is ' + $json.conversation_id + '.', intent: $json.intent, escalated: true, escalation_reason: $json.escalation_reason, handoff_summary: $json.content[0].text, conversation_id: $json.conversation_id }) }}"
-      },
-      "id": "node_return_escalation",
-      "name": "Return Escalation Response",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1,
-      "position": [1780, 420]
+      "id": "dbf847c0-4150-4677-8f6d-c314641ee34d",
+      "name": "Was Escalated?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        0,
+        224
+      ]
     },
     {
       "parameters": {
         "operation": "append",
-        "documentId": { "value": "YOUR_GOOGLE_SHEET_ID" },
-        "sheetName": "Conversation Log",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1roAopZuJXWg3JvVx53ExOg1UOhCMrouAiX-t1cHCTZY/edit?gid=0#gid=0",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "call_log",
+          "mode": "name"
+        },
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
-            "timestamp": "={{ new Date().toISOString() }}",
-            "conversation_id": "={{ $json.conversation_id }}",
-            "intent": "={{ $json.intent }}",
-            "confidence": "={{ $json.confidence }}",
-            "escalated": "={{ $json.should_escalate }}",
-            "turn_number": "={{ $json.turn_number }}"
+            "Timestamp": "={{ $json.body.timestamp }}",
+            "Call ID": "={{ $json.body.call_id }}",
+            "Customer Name": "={{ $json.body.customer_name }}",
+            "Customer Email": "={{ $json.body.customer_email }}",
+            "Language": "={{ $json.body.language }}",
+            "Intent": "={{ $json.body.intent }}",
+            "Route": "={{ $json.body.route }}",
+            "Escalated": "={{ $json.body.escalated }}",
+            "Resolved": "={{ $json.body.resolved }}",
+            "Turns": "={{ $json.body.turn_count }}",
+            "Duration (s)": "={{ $json.body.duration_seconds }}",
+            "Compliance": "={{ $json.body.compliance_passed }}",
+            "Summary": "={{ $json.body.summary }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Timestamp",
+              "displayName": "Timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Call ID",
+              "displayName": "Call ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Customer Name",
+              "displayName": "Customer Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Customer Email",
+              "displayName": "Customer Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Language",
+              "displayName": "Language",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Intent",
+              "displayName": "Intent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Route",
+              "displayName": "Route",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Escalated",
+              "displayName": "Escalated",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Resolved",
+              "displayName": "Resolved",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Turns",
+              "displayName": "Turns",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Duration (s)",
+              "displayName": "Duration (s)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Compliance",
+              "displayName": "Compliance",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Summary",
+              "displayName": "Summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "headers",
+              "displayName": "headers",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "params",
+              "displayName": "params",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "query",
+              "displayName": "query",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "body",
+              "displayName": "body",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "webhookUrl",
+              "displayName": "webhookUrl",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "executionMode",
+              "displayName": "executionMode",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "locationDefine": {
+            "values": {}
           }
         }
       },
-      "id": "node_log_sheet",
+      "id": "4b9e63fc-e238-4065-8edf-f1810f6c1d9a",
       "name": "Log to Google Sheets",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4,
-      "position": [1340, 500],
-      "notes": "Optional: replace sheet ID with your own. Can be disabled without breaking core flow."
+      "position": [
+        240,
+        64
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "Fovt6HPM5DMNZXks",
+          "name": "Google Sheets account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.body.customer_email }}",
+        "subject": "=Your InsurVoice AI call summary — {{ $json.body.timestamp }}",
+        "message": "=<html> <body style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #333;\">   <div style=\"background: #6D4AFF; padding: 20px; border-radius: 8px 8px 0 0;\">     <h1 style=\"color: white; margin: 0; font-size: 22px;\">InsurVoice AI — Call Summary</h1>     <p style=\"color: #C7B8FF; margin: 4px 0 0;\">Allianz Direct · AI Assistant</p>   </div>   <div style=\"background: #f9f9f9; padding: 24px; border: 1px solid #eee; border-radius: 0 0 8px 8px;\">     <p>Dear {{ $json.body.customer_name || 'Valued Customer' }},</p>     <p>Thank you for contacting InsurVoice AI. Here is a summary of your call:</p>     <table style=\"width: 100%; border-collapse: collapse; margin: 16px 0;\">       <tr style=\"background: #f0f0f0;\">         <td style=\"padding: 8px 12px; font-weight: bold; width: 40%;\">Date &amp; Time</td>         <td style=\"padding: 8px 12px;\">{{ $json.body.timestamp }}</td>       </tr>       <tr>         <td style=\"padding: 8px 12px; font-weight: bold;\">Topic</td>         <td style=\"padding: 8px 12px;\">{{ $json.body.intent }}</td>       </tr>       <tr style=\"background: #f0f0f0;\">         <td style=\"padding: 8px 12px; font-weight: bold;\">Language</td>         <td style=\"padding: 8px 12px;\">{{ $json.body.language === 'de' ? 'German' : $json.body.language === 'es' ? 'Spanish' : $json.body.language === 'fr' ? 'French' : 'English' }}</td>       </tr>       <tr>         <td style=\"padding: 8px 12px; font-weight: bold;\">Resolved</td>         <td style=\"padding: 8px 12px;\">{{ $json.body.resolved ? '✅ Yes' : '⏳ Referred to specialist' }}</td>       </tr>     </table>     <div style=\"background: #EDE8FC; padding: 16px; border-radius: 6px; margin: 16px 0;\">       <strong>Summary:</strong><br>       {{ $json.body.summary }}     </div>     {{ $json.body.escalated ? '<div style=\"background: #FBF1DC; padding: 16px; border-radius: 6px; border-left: 4px solid #E6C887;\"><strong>⚡ Your call has been escalated</strong><br>A human agent will follow up with you within 2 business hours.</div>' : '' }}     <hr style=\"border: none; border-top: 1px solid #eee; margin: 20px 0;\">     <p style=\"color: #888; font-size: 12px;\">This call was handled by InsurVoice AI, an automated assistant for Allianz Direct. Call reference: {{ $json.body.call_id }}<br>     AI identity disclosed in line with EU AI Act Article 52. Audio not retained (GDPR compliant).</p>   </div> </body> </html>",
+        "options": {}
+      },
+      "id": "d7bfed4a-12e5-4262-96a1-c2eddcb964d8",
+      "name": "Email Customer Summary",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        240,
+        224
+      ],
+      "webhookId": "eb15712b-f6c5-4ad2-ba1b-a4b6318cb1dd",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "hcD91YSD0k1k2YPN",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "dbystrova26@gmail.com",
+        "subject": "=⚡ ESCALATION — {{ $json.intent }} — {{ $json.customer_name || 'Unknown customer' }}",
+        "message": "=<html>\n<body style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #333;\">\n  <div style=\"background: #FF6B35; padding: 20px; border-radius: 8px 8px 0 0;\">\n    <h1 style=\"color: white; margin: 0; font-size: 20px;\">⚡ Escalation Required</h1>\n    <p style=\"color: #FFE0D0; margin: 4px 0 0;\">InsurVoice AI · Human handoff</p>\n  </div>\n  <div style=\"background: #fff8f5; padding: 24px; border: 1px solid #ffd0b0; border-radius: 0 0 8px 8px;\">\n    <h2 style=\"color: #FF6B35; margin-top: 0;\">Agent Briefing</h2>\n    <table style=\"width: 100%; border-collapse: collapse; margin: 16px 0;\">\n      <tr style=\"background: #f0f0f0;\">\n        <td style=\"padding: 8px 12px; font-weight: bold; width: 35%;\">Customer</td>\n        <td style=\"padding: 8px 12px;\">{{ $json.customer_name || 'Not identified' }}</td>\n      </tr>\n      <tr>\n        <td style=\"padding: 8px 12px; font-weight: bold;\">Email</td>\n        <td style=\"padding: 8px 12px;\">{{ $json.customer_email || 'Not provided' }}</td>\n      </tr>\n      <tr style=\"background: #f0f0f0;\">\n        <td style=\"padding: 8px 12px; font-weight: bold;\">Topic</td>\n        <td style=\"padding: 8px 12px;\">{{ $json.intent }}</td>\n      </tr>\n      <tr>\n        <td style=\"padding: 8px 12px; font-weight: bold;\">Language</td>\n        <td style=\"padding: 8px 12px;\">{{ $json.language }}</td>\n      </tr>\n      <tr style=\"background: #f0f0f0;\">\n        <td style=\"padding: 8px 12px; font-weight: bold;\">Turns</td>\n        <td style=\"padding: 8px 12px;\">{{ $json.turn_count }}</td>\n      </tr>\n      <tr>\n        <td style=\"padding: 8px 12px; font-weight: bold;\">Priority</td>\n        <td style=\"padding: 8px 12px; color: {{ $json.urgency === 'high' ? '#CC0000' : $json.urgency === 'medium' ? '#FF6B35' : '#888' }}; font-weight: bold;\">\n          {{ $json.urgency === 'high' ? '🔴 HIGH' : $json.urgency === 'medium' ? '🟡 MEDIUM' : '🟢 LOW' }}\n        </td>\n      </tr>\n    </table>\n    <div style=\"background: #fff0e0; padding: 16px; border-radius: 6px; border-left: 4px solid #FF6B35; margin: 16px 0;\">\n      <strong>AI Agent Briefing:</strong><br><br>\n      {{ $json.handoff_summary }}\n    </div>\n    <div style=\"background: #f5f5f5; padding: 16px; border-radius: 6px; margin: 16px 0;\">\n      <strong>Conversation Summary:</strong><br><br>\n      {{ $json.summary }}\n    </div>\n    <p style=\"color: #888; font-size: 12px;\">Call ID: {{ $json.call_id }} · {{ $json.timestamp }}<br>\n    Generated by InsurVoice AI · Allianz Direct</p>\n  </div>\n</body>\n</html>",
+        "options": {}
+      },
+      "id": "b130165e-b2ad-4194-952e-c045a2c98154",
+      "name": "Email Agent Briefing",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        480,
+        144
+      ],
+      "webhookId": "f01d8e54-68c0-482a-910f-9d924cabc2fc",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "hcD91YSD0k1k2YPN",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "#insurvoice-alerts",
+          "mode": "name"
+        },
+        "text": "=⚡ *ESCALATION* — {{ $json.body.urgency === 'high' ? '🔴 HIGH PRIORITY' : $json.body.urgency === 'medium' ? '🟡 MEDIUM' : '🟢 LOW' }}\n\n*Customer:* {{ $json.body.customer_name || 'Unknown' }}\n*Topic:* {{ $json.body.intent }}\n*Language:* {{ $json.body.language }}\n*Turns before escalation:* {{ $json.body.turn_count }}\n*Brief:* {{ $json.body.handoff_summary }}\n\n📧 Full briefing sent to your email · Call ID: `{{ $json.body.call_id }}`",
+        "otherOptions": {}
+      },
+      "id": "9269fea3-a70a-47ee-904d-9870d6cc22ae",
+      "name": "Slack Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [
+        480,
+        320
+      ],
+      "webhookId": "f1ff6532-ca00-4f51-b919-24f5993f1281",
+      "credentials": {
+        "slackApi": {
+          "id": "OCoiyfrNFLErKJJ5",
+          "name": "Slack account 3"
+        }
+      }
     }
   ],
+  "pinData": {},
   "connections": {
-    "Webhook: Receive from Voiceflow": {
-      "main": [[{ "node": "Load Knowledge Base", "type": "main", "index": 0 }]]
-    },
-    "Load Knowledge Base": {
-      "main": [[{ "node": "Build Claude Prompt", "type": "main", "index": 0 }]]
-    },
-    "Build Claude Prompt": {
-      "main": [[{ "node": "Claude API — Intent + Response", "type": "main", "index": 0 }]]
-    },
-    "Claude API — Intent + Response": {
-      "main": [[{ "node": "Parse Claude Response", "type": "main", "index": 0 }]]
-    },
-    "Parse Claude Response": {
+    "Call Ended Webhook": {
       "main": [
-        [{ "node": "Escalation Router", "type": "main", "index": 0 }],
-        [{ "node": "Log to Google Sheets", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Was Escalated?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log to Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
-    "Escalation Router": {
+    "Was Escalated?": {
       "main": [
-        [{ "node": "Return Response to Voiceflow", "type": "main", "index": 0 }],
-        [{ "node": "Generate Handoff Summary", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Email Customer Summary",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Email Customer Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
-    "Generate Handoff Summary": {
-      "main": [[{ "node": "Return Escalation Response", "type": "main", "index": 0 }]]
+    "Email Customer Summary": {
+      "main": [
+        [
+          {
+            "node": "Email Agent Briefing",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
+  "active": true,
   "settings": {
     "executionOrder": "v1",
-    "saveManualExecutions": true,
-    "callerPolicy": "workflowsFromAList"
+    "binaryMode": "separate"
   },
+  "versionId": "d09cd9ac-2f01-44ff-8ace-3e67b33f76dd",
   "meta": {
-    "instanceId": "ironhack-final-project",
-    "description": "InsurBot AI — Voiceflow to Claude API orchestration. Classifies intent, retrieves KB answer, manages escalation. Part of Ironhack AI Consulting Bootcamp final project."
-  }
+    "templateCredsSetupCompleted": true,
+    "instanceId": "22f60916f9c7b26e6914b0421ec3dd7a647e0e5851a764c1369ac1e12e3255be"
+  },
+  "id": "BCfGzLUze9lZ2ov6",
+  "tags": []
 }
