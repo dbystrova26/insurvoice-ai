@@ -1,0 +1,24 @@
+{
+  "generated": "2025-06",
+  "files": {
+    "intents_raw.csv": {
+      "description": "Customer service intent dataset",
+      "source": "BITEXT (GitHub) or synthetic fallback",
+      "license": "CC BY 4.0 / synthetic",
+      "personal_data": false
+    },
+    "knowledge_base.json": {
+      "description": "Insurance FAQ knowledge base",
+      "source": "Synthetic, based on GDV public consumer guides",
+      "license": "Synthetic \u2014 free to use",
+      "personal_data": false
+    },
+    "sample_conversations.json": {
+      "description": "Fictional demo conversation transcripts",
+      "source": "Entirely synthetic \u2014 no real customers",
+      "license": "Synthetic \u2014 free to use",
+      "personal_data": false
+    }
+  },
+  "gdpr_note": "No personal data in any file. All content is synthetic or aggregated/anonymised public data."
+}

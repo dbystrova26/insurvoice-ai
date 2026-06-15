@@ -1,0 +1,28 @@
+utterance,intent,category
+How do I file a claim for water damage?,file_claim,claims
+I need to report a car accident,file_claim,claims
+What documents do I need to submit a claim?,file_claim,claims
+How long does a claim take to process?,claim_status,claims
+Can I check my claim status online?,claim_status,claims
+"My claim was rejected, what can I do?",claim_dispute,claims
+Does my home insurance cover theft?,policy_coverage,policy
+What is my deductible for health insurance?,policy_coverage,policy
+When does my policy expire?,policy_info,policy
+How do I renew my policy?,policy_renewal,policy
+Can I add my partner to my policy?,policy_change,policy
+I want to cancel my insurance,cancel_policy,policy
+Why has my premium increased?,billing_query,billing
+I was charged twice this month,billing_dispute,billing
+How can I pay my invoice?,payment_method,billing
+When is my next payment due?,payment_schedule,billing
+I forgot my password,account_access,account
+How do I update my address?,account_update,account
+Can I add a beneficiary?,account_update,account
+I want to speak to a human,escalate_human,escalation
+"This is urgent, connect me to someone",escalate_human,escalation
+I have a complaint,lodge_complaint,complaint
+I'm not happy with your service,lodge_complaint,complaint
+What are your opening hours?,general_info,general
+Where is your nearest branch?,general_info,general
+"Thank you, that's all I needed",end_conversation,general
+Goodbye,end_conversation,general
