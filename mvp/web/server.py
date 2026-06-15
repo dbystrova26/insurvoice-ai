@@ -20,7 +20,7 @@ load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET", "insurvoice-dev-change-in-prod")
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="gevent")
 
 ANTHROPIC_KEY  = os.getenv("ANTHROPIC_API_KEY", "")
 OPENAI_KEY     = os.getenv("OPENAI_API_KEY", "")
