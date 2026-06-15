@@ -65,6 +65,13 @@ Detected intent: {intent}"""
 
 
 class InsurVoiceAgent:
+    """
+    Multi-turn conversation agent for insurance support.
+    
+    Maintains conversation history, tracks escalation decisions,
+    and generates handoff summaries for human agents.
+    """
+    
     def __init__(self, api_key: str):
         self.client = anthropic.Anthropic(api_key=api_key)
         self.conversation_history: list[dict] = []
@@ -73,6 +80,7 @@ class InsurVoiceAgent:
         self.is_first_turn: bool = True
 
     def _build_history_section(self) -> str:
+        """Build conversation history for context window."""
         if not self.conversation_history:
             return ""
         lines = ["CONVERSATION SO FAR:"]
@@ -82,6 +90,7 @@ class InsurVoiceAgent:
         return "\n".join(lines)
 
     def _parse_response(self, raw: str) -> dict:
+        """Parse Claude's JSON response, with fallback handling."""
         raw = raw.strip()
         raw = re.sub(r"^```json\s*", "", raw)
         raw = re.sub(r"^```\s*", "", raw)
@@ -89,26 +98,47 @@ class InsurVoiceAgent:
         try:
             return json.loads(raw)
         except json.JSONDecodeError:
+            # Try to extract JSON object from response
             match = re.search(r"\{[\s\S]*\}", raw)
             if match:
                 try:
                     return json.loads(match.group())
                 except Exception:
                     pass
+            # Fallback response
             return {
                 "intent": "general_info",
                 "confidence": 0.3,
                 "response": "Sorry, I didn't quite catch that. Could you say it again? Or just say 'agent' to reach a colleague.",
                 "should_escalate": False,
                 "escalation_reason": None,
+                "route": "general",
             }
 
-    def respond(self, user_message: str) -> dict:
-        """Process a user message (text or transcribed voice) and return response dict."""
+    def respond(self, user_message: str, language: str = "en") -> dict:
+        """
+        Process a user message and return response dict.
+        
+        Args:
+            user_message: Transcribed or typed text from user
+            language: ISO language code (en, de, es, etc.)
+        
+        Returns:
+            {
+                "response": str,
+                "intent": str,
+                "route": str,  # which specialist handled it
+                "should_escalate": bool,
+                "escalation_reason": str|None,
+                "handoff_summary": str|None,
+            }
+        """
         self.turn_count += 1
+        
+        # Retrieve context from knowledge base
         kb_context = retrieve_context(user_message)
 
-        # Build history section BEFORE marking first turn done
+        # Build history section (skip on first turn to allow AI disclosure)
         history_section = self._build_history_section() if not self.is_first_turn else ""
 
         system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
@@ -135,7 +165,23 @@ class InsurVoiceAgent:
                 "response": "I'm having a technical problem. Let me connect you to a colleague right away.",
                 "should_escalate": True,
                 "escalation_reason": f"Technical error: {str(e)[:50]}",
+                "route": "error",
             }
+
+        # Determine route based on intent
+        intent = result.get("intent", "general_info")
+        if intent == "file_claim":
+            route = "claims"
+        elif intent == "policy_coverage":
+            route = "policy"
+        elif intent == "billing_query":
+            route = "billing"
+        elif intent in {"escalate_human", "out_of_scope"}:
+            route = "escalation"
+        else:
+            route = "general"
+        
+        result["route"] = route
 
         # Track failures for auto-escalation
         if result.get("confidence", 0) < 0.5:
@@ -143,23 +189,29 @@ class InsurVoiceAgent:
         else:
             self.consecutive_failures = 0
 
+        # Auto-escalate after 2 consecutive low-confidence turns
         if self.consecutive_failures >= 2 and not result.get("should_escalate"):
             result["should_escalate"] = True
             result["escalation_reason"] = "Auto-escalation: two unresolved turns"
             result["response"] = "Let me get you to a specialist who can help with this properly."
+            result["route"] = "escalation"
 
+        # Generate handoff summary if escalating
         handoff_summary = None
         if result.get("should_escalate") and self.conversation_history:
-            handoff_summary = self._generate_handoff_summary(user_message, result.get("intent", "unknown"))
+            handoff_summary = self._generate_handoff_summary(user_message, intent)
+        
+        result["handoff_summary"] = handoff_summary
 
-        # Update history
+        # Update conversation history
         self.conversation_history.append({"role": "user", "text": user_message})
         self.conversation_history.append({"role": "assistant", "text": result["response"]})
         self.is_first_turn = False
 
-        return {**result, "handoff_summary": handoff_summary}
+        return result
 
     def _generate_handoff_summary(self, last_message: str, intent: str) -> str:
+        """Generate brief handoff summary for human agent."""
         history_text = "\n".join(
             f"{'Customer' if t['role']=='user' else 'InsurVoice'}: {t['text']}"
             for t in self.conversation_history[-6:]
@@ -171,15 +223,19 @@ class InsurVoiceAgent:
                 messages=[{
                     "role": "user",
                     "content": ESCALATION_SUMMARY_PROMPT.format(
-                        history=history_text, last_message=last_message, intent=intent,
+                        history=history_text,
+                        last_message=last_message,
+                        intent=intent,
                     )
                 }],
             )
             return msg.content[0].text.strip()
-        except Exception:
+        except Exception as e:
+            # Fallback: just use the last message
             return f"Customer query: {last_message[:100]}. Intent: {intent}."
 
     def reset(self):
+        """Clear conversation history and reset state."""
         self.conversation_history = []
         self.turn_count = 0
         self.consecutive_failures = 0
