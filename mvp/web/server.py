@@ -18,6 +18,7 @@ from stream import DeepgramStreamSession, transcribe_streaming_chunk
 load_dotenv()
 
 app = Flask(__name__)
+_audio_cache = {}  # call_id -> audio bytes
 app.secret_key = os.getenv("FLASK_SECRET", "insurvoice-dev-change-in-prod")
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="gevent", transports=["polling"])
 
@@ -69,7 +70,9 @@ def _run_turn(sid: str, transcript: str, socket_id: str, language: str = "en"):
     if ELEVENLABS_KEY:
         tts = synthesize_elevenlabs(result["response"], ELEVENLABS_KEY, VOICE_ID)
         if tts["success"]:
-            audio_b64 = base64.b64encode(tts["audio"]).decode()
+            audio_id = str(uuid.uuid4())
+            _audio_cache[audio_id] = tts["audio"]
+            audio_b64 = audio_id
 
     socketio.emit("reply", {
         "transcript": transcript,
@@ -81,7 +84,7 @@ def _run_turn(sid: str, transcript: str, socket_id: str, language: str = "en"):
         "handoff_summary": result.get("handoff_summary"),
         "agent_trace": result.get("agent_trace", []),
         "compliance": result.get("compliance", {}),
-        "audio_base64": audio_b64,
+        "audio_url": f"/api/audio/{audio_b64}" if audio_b64 else None,
     }, room=socket_id)
 
 
@@ -182,7 +185,9 @@ def handle_text():
     if ELEVENLABS_KEY and data.get("tts", True):
         tts = synthesize_elevenlabs(result["response"], ELEVENLABS_KEY, VOICE_ID)
         if tts["success"]:
-            audio_b64 = base64.b64encode(tts["audio"]).decode()
+            audio_id = str(uuid.uuid4())
+            _audio_cache[audio_id] = tts["audio"]
+            audio_b64 = audio_id
     return jsonify({
         "transcript": user_text,
         "reply": result["response"],
@@ -192,7 +197,7 @@ def handle_text():
         "handoff_summary": result.get("handoff_summary"),
         "agent_trace": result.get("agent_trace", []),
         "compliance": result.get("compliance", {}),
-        "audio_base64": audio_b64,
+        "audio_url": f"/api/audio/{audio_b64}" if audio_b64 else None,
     })
 
 
@@ -218,7 +223,9 @@ def handle_upload():
     if ELEVENLABS_KEY:
         tts = synthesize_elevenlabs(result["response"], ELEVENLABS_KEY, VOICE_ID)
         if tts["success"]:
-            audio_b64 = base64.b64encode(tts["audio"]).decode()
+            audio_id = str(uuid.uuid4())
+            _audio_cache[audio_id] = tts["audio"]
+            audio_b64 = audio_id
     return jsonify({
         "transcript": stt["text"],
         "reply": result["response"],
@@ -228,8 +235,17 @@ def handle_upload():
         "handoff_summary": result.get("handoff_summary"),
         "agent_trace": result.get("agent_trace", []),
         "compliance": result.get("compliance", {}),
-        "audio_base64": audio_b64,
+        "audio_url": f"/api/audio/{audio_b64}" if audio_b64 else None,
     })
+
+
+@app.route("/api/audio/<audio_id>")
+def serve_audio(audio_id):
+    audio = _audio_cache.pop(audio_id, None)
+    if not audio:
+        return "", 404
+    from flask import Response
+    return Response(audio, mimetype="audio/mpeg")
 
 
 @socketio.on("connect")
