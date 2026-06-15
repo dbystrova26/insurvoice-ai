@@ -233,25 +233,42 @@ def simli_session():
     """
     ✅ Get Simli WebRTC session token for avatar video streaming.
     
-    Returns a simple session token that Simli API expects.
+    Calls Simli API to get a proper session token.
     """
     if not SIMLI_API_KEY or not SIMLI_FACE_ID:
         logger.warning("[Simli] Keys not configured")
         return jsonify({"error": "Simli keys not configured"}), 500
     
     try:
-        # Generate a simple session token
-        session_token = str(uuid.uuid4())
+        import requests as req
         
-        logger.info(f"[Simli] Session token generated: {session_token[:8]}...")
+        # Call Simli API to get proper session token
+        resp = req.post(
+            "https://api.simli.ai/startAudioToVideoSession",
+            headers={"Content-Type": "application/json"},
+            json={
+                "faceId": SIMLI_FACE_ID,
+                "apiKey": SIMLI_API_KEY,
+                "handleSilence": True,
+                "maxSessionLength": 600,
+            },
+            timeout=10,
+        )
         
-        # Return minimal response
+        if resp.status_code != 200:
+            logger.error(f"[Simli] Session error: {resp.status_code} {resp.text[:100]}")
+            return jsonify({"error": f"Simli error: {resp.text[:100]}"}), 502
+        
+        data = resp.json()
+        session_token = data.get("sessionToken") or data.get("session_token")
+        
+        logger.info(f"[Simli] Session created: {session_token[:20]}...")
+        
         return jsonify({
             "session_token": session_token,
             "ice_servers": [
                 {"urls": ["stun:stun.l.google.com:19302"]},
                 {"urls": ["stun:stun1.l.google.com:19302"]},
-                {"urls": ["stun:stun2.l.google.com:19302"]},
             ]
         })
     
