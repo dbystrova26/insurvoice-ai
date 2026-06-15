@@ -243,7 +243,7 @@
       const SC = (window.SimliClientLib && window.SimliClientLib.SimliClient) || window.SimliClient;
       if (!SC) { console.warn('Simli SDK not loaded'); return; }
 
-      simliClient = new SC(session_token, videoEl, audioEl);
+      simliClient = new SC(session_token, videoEl, audioEl, 3000);
       simliClient.on('start', () => {
         simliReady = true;
         document.getElementById('avatarPlaceholder').style.display = 'none';
@@ -277,6 +277,17 @@
     }
   }
 
+  // Unlock audio on first user gesture (Chrome autoplay policy)
+  let audioUnlocked = false;
+  function unlockAudio() {
+    if (audioUnlocked) return;
+    audioUnlocked = true;
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    ctx.resume().then(() => ctx.close());
+  }
+  document.addEventListener('click', unlockAudio, { once: true });
+  document.addEventListener('keydown', unlockAudio, { once: true });
+
   // Play audio — Simli handles playback + lip sync if ready, else fallback to Audio()
   function playAudio(base64) {
     if (simliReady) {
@@ -285,7 +296,16 @@
     } else {
       // Fallback: direct audio playback when Simli not connected
       const audio = new Audio('data:audio/mpeg;base64,' + base64);
-      audio.play().catch(() => {});
+      audio.volume = 1.0;
+      const playPromise = audio.play();
+      if (playPromise) {
+        playPromise.catch(err => {
+          // Autoplay blocked — queue it to play after next user gesture
+          console.warn('Audio autoplay blocked, will retry on next interaction:', err.message);
+          const retry = () => { audio.play().catch(() => {}); };
+          document.addEventListener('click', retry, { once: true });
+        });
+      }
     }
   }
 
