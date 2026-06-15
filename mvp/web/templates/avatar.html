@@ -214,13 +214,33 @@
     if (!SIMLI_API_KEY || !SIMLI_FACE_ID) return;
     try {
       document.getElementById('avatarStatus').textContent = 'Loading avatar…';
-      const r = await fetch('/api/simli/session');
-      if (!r.ok) return;
-      const { session_token } = await r.json();
+
+      // Call Simli API directly from browser (avoids Render egress restrictions)
+      const sessResp = await fetch('https://api.simli.ai/compose/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          faceId: SIMLI_FACE_ID,
+          apiKey: SIMLI_API_KEY,
+          handleSilence: true,
+          maxSessionLength: 600,
+          maxIdleTime: 180,
+        })
+      });
+
+      if (!sessResp.ok) {
+        console.warn('Simli session failed:', await sessResp.text());
+        document.getElementById('avatarStatus').textContent = 'Avatar unavailable';
+        return;
+      }
+
+      const { session_token } = await sessResp.json();
+
       const videoEl = document.getElementById('avatarVideo');
       const audioEl = document.getElementById('avatarAudio');
       const SC = (window.SimliClientLib && window.SimliClientLib.SimliClient) || window.SimliClient;
-      if (!SC) return;
+      if (!SC) { console.warn('Simli SDK not loaded'); return; }
+
       simliClient = new SC(session_token, videoEl, audioEl, null, undefined, 'livekit', 'websockets');
       simliClient.on('start', () => {
         simliReady = true;
@@ -231,6 +251,7 @@
       await simliClient.start();
     } catch (e) {
       console.warn('Simli init failed:', e);
+      document.getElementById('avatarStatus').textContent = 'Avatar unavailable';
     }
   }
 
