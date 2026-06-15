@@ -44,7 +44,9 @@ def _sid() -> str:
 
 def _get_agent(sid: str) -> Orchestrator:
     if sid not in _agents:
-        _agents[sid] = Orchestrator(ANTHROPIC_KEY)
+        agent = Orchestrator(ANTHROPIC_KEY)
+        agent.call_id = f"{sid[:8]}-{int(time.time())}"   # stable ID for this session
+        _agents[sid] = agent
     return _agents[sid]
 
 
@@ -93,7 +95,7 @@ def _run_turn(sid: str, transcript: str, socket_id: str, language: str = "en"):
     if N8N_WEBHOOK_URL:
         agent_obj = _get_agent(sid)
         fire_n8n_webhook(
-            call_id=f"{sid[:8]}-{int(time.time())}",
+            call_id=agent_obj.call_id,
             intent=result.get("intent", "unknown"),
             route=result.get("route", "general"),
             language=language,
@@ -103,8 +105,8 @@ def _run_turn(sid: str, transcript: str, socket_id: str, language: str = "en"):
             handoff_summary=result.get("handoff_summary", ""),
             compliance_passed=result.get("compliance", {}).get("compliant", True),
             conversation_history=getattr(agent_obj, "history", []),
-            customer_name=getattr(agent_obj, "customer_name", None),
-            customer_email=getattr(agent_obj, "customer_email", None),
+            customer_name=agent_obj.customer.get("name") if agent_obj.customer else None,
+            customer_email=agent_obj.customer.get("email") if agent_obj.customer else None,
         )
 
 

@@ -1,46 +1,77 @@
 """
 agents/orchestrator.py
 ----------------------
-InsurVoice multi-agent orchestrator with:
-- Tina greeting on first turn
-- Language selection flow
-- Supabase CRM lookup by name + policy number
-- Full multi-agent pipeline: Router → Specialist → ComplianceGuard
+The InsurVoice multi-agent orchestrator.
+
+Pipeline for each customer turn:
+
+    customer message
+        │
+        ▼
+    [1] RouterAgent          → which specialist? (claims/billing/policy/general/escalation)
+        │
+        ▼
+    [2] Specialist OR         → domain answer with isolated, focused context
+        EscalationAgent       → human handoff + briefing
+        │
+        ▼
+    [3] ComplianceGuard       → EU AI Act + GDPR check before anything is spoken
+        │
+        ▼
+    final response (+ trace of which agents ran)
+
+The orchestrator keeps conversation memory and exposes the same .respond()
+interface the rest of the app already uses, so app.py / server.py barely change.
+
+The returned dict includes an `agent_trace` so the UI can SHOW the multi-agent
+routing happening — a strong visual for a portfolio demo.
 """
 
 import anthropic
-from knowledge import retrieve_context
+from rag import retrieve_context          # pgvector semantic search (falls back to keyword)
+from crm import find_customer, format_customer_context, log_call_to_db
 from .router import RouterAgent
 from .specialists import SPECIALISTS
 from .escalation import EscalationAgent
 from .compliance_guard import ComplianceGuard
 
-# Try to import CRM — graceful fallback if Supabase not configured
-try:
-    from crm import find_customer, format_customer_context
-    CRM_AVAILABLE = True
-except ImportError:
-    CRM_AVAILABLE = False
-    def find_customer(text): return None
-    def format_customer_context(c): return ""
+
+# ── helpers used by Orchestrator ─────────────────────────────────────────────
+
+def _assess_urgency(intent: str, turn_count: int, handoff_summary: str) -> str:
+    """Mirror of n8n_integration.assess_urgency — reused here for DB logging."""
+    high = ["legal", "lawsuit", "court", "fraud", "emergency", "fire", "flood"]
+    medium = ["angry", "frustrated", "rejected", "denied", "cancel"]
+    text = f"{intent} {handoff_summary}".lower()
+    if any(k in text for k in high):
+        return "high"
+    if any(k in text for k in medium) or turn_count >= 5:
+        return "medium"
+    return "low"
 
 
-LANG_NAMES = {
-    "en": "English", "de": "German", "es": "Spanish",
-    "fr": "French", "it": "Italian", "nl": "Dutch",
-    "pt": "Portuguese", "pl": "Polish",
-}
+def _call_summary(history: list, intent: str, resolved: bool) -> str:
+    """One-line summary for call_log.summary column."""
+    topic_map = {
+        "escalate_human": "escalation to human agent",
+        "file_claim": "filing a claim",
+        "claim_status": "claim status check",
+        "billing_query": "billing query",
+        "policy_renewal": "policy renewal",
+        "cancel_policy": "policy cancellation",
+        "policy_coverage": "policy coverage question",
+    }
+    topic = topic_map.get(intent, intent.replace("_", " "))
+    status = "resolved" if resolved else "unresolved — follow-up required"
+    turns = len([h for h in history if h["role"] == "user"])
+    return f"Customer asked about {topic}. {turns} turn(s). {status}."
 
-# Conversation states
-STATE_GREETING    = "greeting"       # First turn — Tina introduces herself
-STATE_LANGUAGE    = "language"       # Waiting for language selection
-STATE_IDENTIFY    = "identify"       # Waiting for name + policy number
-STATE_ACTIVE      = "active"         # Normal conversation
 
 
 class Orchestrator:
     def __init__(self, api_key: str):
         self.client = anthropic.Anthropic(api_key=api_key)
+        # Instantiate the agent team once, reuse across turns
         self.router = RouterAgent(self.client)
         self.specialists = {name: cls(self.client) for name, cls in SPECIALISTS.items()}
         self.escalation = EscalationAgent(self.client)
@@ -49,19 +80,16 @@ class Orchestrator:
         self.history: list[dict] = []
         self.turn_count = 0
         self.consecutive_unresolved = 0
-        self.state = STATE_GREETING
-        self.language = "en"
-        self.customer = None          # CRM record once identified
-        self.customer_name = None
-        self.customer_email = None
+        self.is_first_turn = True
+        self.customer: dict | None = None    # cached CRM record for this session
 
-    # ── Helpers ──────────────────────────────────────────────────────────────
+    # ---- context helpers -------------------------------------------------
 
     def _history_text(self) -> str:
         if not self.history:
             return ""
         return "\n".join(
-            f"{'Customer' if t['role']=='user' else 'Tina'}: {t['text']}"
+            f"{'Customer' if t['role']=='user' else 'InsurVoice'}: {t['text']}"
             for t in self.history[-6:]
         )
 
@@ -69,197 +97,42 @@ class Orchestrator:
         ht = self._history_text()
         return f"CONVERSATION SO FAR:\n{ht}" if ht else ""
 
-    def _build_context(self, user_message: str) -> dict:
-        lang_name = LANG_NAMES.get(self.language, "English")
-        lang_instruction = f"IMPORTANT: Reply in {lang_name} only."
+    def _build_context(self, user_message: str, language: str = "en") -> dict:
+        lang_names = {
+            "en": "English", "de": "German", "es": "Spanish",
+            "fr": "French", "it": "Italian", "nl": "Dutch",
+            "pt": "Portuguese", "pl": "Polish",
+        }
+        lang_name = lang_names.get(language, "English")
 
-        # CRM context
-        crm_context = ""
-        if self.customer:
-            crm_context = format_customer_context(self.customer)
-            self.customer_name = self.customer.get("name")
-            self.customer_email = self.customer.get("email")
+        # RAG: semantic search over policy_chunks (pgvector), falls back to keyword
+        rag_context = retrieve_context(user_message)
+
+        # CRM: look up customer by name/policy number mentioned in message
+        if not self.customer:
+            self.customer = find_customer(user_message)
+        crm_context = format_customer_context(self.customer) if self.customer else ""
+
+        # Combine: CRM record first so agents can personalise, then policy docs
+        kb_context = "\n\n".join(filter(None, [crm_context, rag_context]))
 
         return {
-            "kb_context": retrieve_context(user_message),
-            "crm_context": crm_context,
+            "kb_context": kb_context,
             "history_text": self._history_text(),
-            "history_section": self._history_section(),
-            "is_first_turn": self.state == STATE_GREETING,
-            "language": self.language,
+            "history_section": self._history_section() if not self.is_first_turn else "",
+            "is_first_turn": self.is_first_turn,
+            "language": language,
             "language_name": lang_name,
-            "language_instruction": lang_instruction,
-            "customer": self.customer,
-            "customer_name": self.customer_name,
+            "language_instruction": f"IMPORTANT: The customer is speaking {lang_name}. You MUST reply in {lang_name} only.",
         }
 
-    def _detect_language(self, text: str) -> str:
-        """Detect language from user response."""
-        text_lower = text.lower()
-        if any(w in text_lower for w in ["english", "en", "inglés", "anglais"]):
-            return "en"
-        if any(w in text_lower for w in ["deutsch", "german", "de", "auf deutsch", "alemán"]):
-            return "de"
-        if any(w in text_lower for w in ["español", "spanish", "es", "espagnol"]):
-            return "es"
-        if any(w in text_lower for w in ["français", "french", "fr", "franzosisch"]):
-            return "fr"
-        if any(w in text_lower for w in ["italiano", "italian", "it"]):
-            return "it"
-        return self.language  # keep current if unclear
+    # ---- main turn -------------------------------------------------------
 
-    def _make_response(self, text: str, intent: str = "greeting",
-                       route: str = "general", trace: list = None) -> dict:
-        """Helper to build a response dict."""
-        self.history.append({"role": "assistant", "text": text})
-        return {
-            "response": text,
-            "intent": intent,
-            "route": route,
-            "should_escalate": False,
-            "escalation_reason": None,
-            "handoff_summary": None,
-            "resolved": True,
-            "compliance": {"compliant": True, "violations": [], "used_llm_review": False},
-            "agent_trace": trace or [],
-        }
-
-    # ── Main turn ─────────────────────────────────────────────────────────────
-
-    def respond(self, user_message: str, language: str = None) -> dict:
+    def respond(self, user_message: str, language: str = "en") -> dict:
         self.turn_count += 1
-
-        # Update language from STT detection if provided and not already set by user
-        if language and language != "en" and self.state not in (STATE_LANGUAGE,):
-            self.language = language
-
-        # Record user message
-        self.history.append({"role": "user", "text": user_message})
-
-        # ── STATE: GREETING (first turn) ──────────────────────────────────────
-        if self.state == STATE_GREETING:
-            self.state = STATE_LANGUAGE
-            greeting = (
-                "Hi, I'm Tina, your AI insurance assistant from Allianz Direct. "
-                "I'm here to help you with any questions about your policy, claims, billing, or coverage. "
-                "Before we start — would you prefer to speak in English or Deutsch?"
-            )
-            return self._make_response(greeting, "greeting", "general", [{
-                "agent": "Tina", "action": "greeting", "detail": "language selection prompt"
-            }])
-
-        # ── STATE: LANGUAGE SELECTION ─────────────────────────────────────────
-        if self.state == STATE_LANGUAGE:
-            detected = self._detect_language(user_message)
-            self.language = detected
-            self.state = STATE_IDENTIFY
-            lang_name = LANG_NAMES.get(detected, "English")
-
-            if detected == "de":
-                confirm = (
-                    f"Perfekt, ich helfe Ihnen gerne auf Deutsch! "
-                    f"Darf ich Ihren Namen und Ihre Versicherungsnummer erfragen, "
-                    f"damit ich Ihre Unterlagen aufrufen kann?"
-                )
-            elif detected == "es":
-                confirm = (
-                    f"¡Perfecto! Le atenderé en español. "
-                    f"¿Podría indicarme su nombre y número de póliza para consultar su expediente?"
-                )
-            elif detected == "fr":
-                confirm = (
-                    f"Parfait, je vous aiderai en français ! "
-                    f"Pourriez-vous me donner votre nom et numéro de police pour accéder à votre dossier ?"
-                )
-            else:
-                confirm = (
-                    f"Perfect, I'll help you in English! "
-                    f"Could you please give me your name and policy number "
-                    f"so I can pull up your account?"
-                )
-
-            return self._make_response(confirm, "language_confirmed", "general", [{
-                "agent": "Tina", "action": f"language → {lang_name}", "detail": "requesting identification"
-            }])
-
-        # ── STATE: IDENTIFY (waiting for name + policy number) ────────────────
-        if self.state == STATE_IDENTIFY:
-            # Try CRM lookup
-            customer = find_customer(user_message) if CRM_AVAILABLE else None
-
-            if customer:
-                self.customer = customer
-                self.customer_name = customer["name"]
-                self.customer_email = customer.get("email")
-                # Switch to customer's preferred language if set
-                if customer.get("language") and customer["language"] != "en":
-                    self.language = customer["language"]
-                self.state = STATE_ACTIVE
-
-                # Build personalised greeting
-                name = customer["name"].split()[0]  # first name only
-                policy = customer["policy_number"]
-                policy_type = customer["policy_type"]
-                status = customer["policy_status"]
-                premium = customer["premium_monthly"]
-                next_pay = customer["next_payment"]
-
-                claims = customer.get("claims", [])
-                claim_line = ""
-                if claims:
-                    latest = claims[0]
-                    claim_status_map = {
-                        "under_assessment": "currently under assessment",
-                        "approved": "has been approved",
-                        "settled": "has been settled",
-                        "rejected": "was unfortunately rejected",
-                    }
-                    cs = claim_status_map.get(latest["status"], latest["status"])
-                    claim_line = f" Your most recent claim {latest['claim_number']} {cs}."
-
-                if self.language == "de":
-                    response = (
-                        f"Hallo {name}! Ich habe Ihre Unterlagen gefunden. "
-                        f"Ihre {policy_type}-Police {policy} ist {status}. "
-                        f"Ihre nächste Zahlung beträgt EUR {premium} am {next_pay}."
-                        f"{claim_line} Wie kann ich Ihnen heute helfen?"
-                    )
-                else:
-                    response = (
-                        f"Hello {name}! I've found your account. "
-                        f"Your {policy_type} policy {policy} is {status}. "
-                        f"Your next payment of EUR {premium} is due on {next_pay}."
-                        f"{claim_line} How can I help you today?"
-                    )
-
-                return self._make_response(response, "crm_lookup_success", "general", [{
-                    "agent": "Tina CRM",
-                    "action": f"found {customer['policy_number']}",
-                    "detail": f"{customer['name']} · {customer['policy_type']}"
-                }])
-
-            else:
-                # Not found — move to active anyway, proceed without CRM
-                self.state = STATE_ACTIVE
-                if self.language == "de":
-                    response = (
-                        "Ich konnte leider keine passende Police finden. "
-                        "Kein Problem — ich helfe Ihnen trotzdem gerne weiter. "
-                        "Was kann ich für Sie tun?"
-                    )
-                else:
-                    response = (
-                        "I wasn't able to find a matching policy with those details. "
-                        "No worries — I can still help you with your question. "
-                        "What can I assist you with today?"
-                    )
-                return self._make_response(response, "crm_lookup_failed", "general", [{
-                    "agent": "Tina CRM", "action": "not found", "detail": "proceeding without account"
-                }])
-
-        # ── STATE: ACTIVE — full multi-agent pipeline ─────────────────────────
         trace = []
-        ctx = self._build_context(user_message)
+
+        ctx = self._build_context(user_message, language)
 
         # [1] ROUTE
         routing = self.router.call(user_message, ctx)
@@ -271,6 +144,7 @@ class Orchestrator:
             "confidence": routing.get("confidence", 0),
         })
 
+        # Decide escalation up front if router says so, or after repeated failures
         escalate = (route == "escalation")
 
         # [2] HANDLE
@@ -301,6 +175,7 @@ class Orchestrator:
                 "confidence": result.get("confidence", 0),
             })
 
+            # Specialist may itself request escalation
             if result.get("suggested_escalation"):
                 ctx["escalation_reason"] = f"{specialist.name} agent could not fully resolve"
                 esc = self.escalation.call(user_message, ctx)
@@ -316,10 +191,11 @@ class Orchestrator:
                     "confidence": 1.0,
                 })
 
+        # Track repeated non-resolution → safety-net auto-escalation
         if not resolved and not escalate:
             self.consecutive_unresolved += 1
-            if self.consecutive_unresolved >= 4:
-                ctx["escalation_reason"] = "repeated unresolved turns"
+            if self.consecutive_unresolved >= 4:  # only after 4 unresolved turns
+                ctx["escalation_reason"] = "two consecutive turns without resolution"
                 esc = self.escalation.call(user_message, ctx)
                 candidate = esc.get("response", candidate)
                 handoff = esc.get("handoff_summary")
@@ -328,13 +204,13 @@ class Orchestrator:
                 trace.append({
                     "agent": "EscalationAgent",
                     "action": "→ auto-escalation",
-                    "detail": f"{self.consecutive_unresolved} unresolved turns",
+                    "detail": "2 unresolved turns",
                     "confidence": 1.0,
                 })
         else:
             self.consecutive_unresolved = 0
 
-        # [3] COMPLIANCE GUARD
+        # [3] COMPLIANCE GUARD — always runs, before anything is spoken
         guard_result = self.guard.review(candidate, ctx)
         final_response = guard_result["final_response"]
         trace.append({
@@ -344,7 +220,27 @@ class Orchestrator:
             "confidence": 1.0,
         })
 
+        # Update memory
+        self.history.append({"role": "user", "text": user_message})
         self.history.append({"role": "assistant", "text": final_response})
+        self.is_first_turn = False
+
+        # Save to Supabase call_log (non-blocking — errors silently skip)
+        log_call_to_db({
+            "call_id": getattr(self, "call_id", None),
+            "customer_id": self.customer.get("id") if self.customer else None,
+            "language": ctx.get("language", "en"),
+            "intent": intent,
+            "route": route,
+            "escalated": escalate,
+            "resolved": resolved,
+            "turn_count": self.turn_count,
+            "duration_seconds": 0,         # server.py fills this at end of call
+            "compliance_passed": guard_result["compliant"],
+            "urgency": _assess_urgency(intent, self.turn_count, handoff or ""),
+            "summary": _call_summary(self.history, intent, resolved),
+            "handoff_summary": handoff,
+        })
 
         return {
             "response": final_response,
@@ -366,8 +262,6 @@ class Orchestrator:
         self.history = []
         self.turn_count = 0
         self.consecutive_unresolved = 0
-        self.state = STATE_GREETING
-        self.language = "en"
+        self.is_first_turn = True
         self.customer = None
-        self.customer_name = None
-        self.customer_email = None
+        self.call_id = None
