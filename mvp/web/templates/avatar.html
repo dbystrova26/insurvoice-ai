@@ -309,7 +309,7 @@
 
   // ── SocketIO ──────────────────────────────────────────────────────────────
   function initSocket() {
-    socket = io();
+    socket = io({transports: ["polling"]});
 
     socket.on('connected', async d => {
       deepgramAvailable = d.deepgram_available;
