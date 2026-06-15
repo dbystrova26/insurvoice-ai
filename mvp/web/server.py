@@ -229,20 +229,57 @@ def serve_audio(audio_id):
 
 
 @app.route("/api/simli/session")
+@app.route("/api/simli/session")
 def simli_session():
-    """
-    ✅ Get Simli credentials for frontend to use directly.
-    
-    Frontend will call Simli API directly with these credentials.
-    """
+    """Get Simli session token using CORRECT /compose/token endpoint."""
     if not SIMLI_API_KEY or not SIMLI_FACE_ID:
         logger.warning("[Simli] Keys not configured")
         return jsonify({"error": "Simli keys not configured"}), 500
     
     try:
-        # Just return the credentials and config
-        # Frontend will use these to call Simli API directly
+        import requests as req
+        
+        # Call CORRECT Simli endpoint: /compose/token
+        logger.info("[Simli] Requesting session token from /compose/token")
+        
+        resp = req.post(
+            "https://api.simli.ai/compose/token",
+            headers={
+                "Content-Type": "application/json",
+                "x-simli-api-key": SIMLI_API_KEY
+            },
+            json={
+                "faceId": SIMLI_FACE_ID,
+                "apiVersion": "v2",
+                "handleSilence": True,
+                "maxSessionLength": 3600,
+                "maxIdleTime": 300,
+            },
+            timeout=10,
+        )
+        
+        if resp.status_code != 200:
+            logger.error(f"[Simli] Error: {resp.status_code} {resp.text[:200]}")
+            return jsonify({"error": f"Simli error: {resp.status_code}"}), 502
+        
+        data = resp.json()
+        session_token = data.get("session_token")
+        
+        if not session_token:
+            logger.error(f"[Simli] No token in response: {data}")
+            return jsonify({"error": "No session token"}), 502
+        
+        logger.info(f"[Simli] Session token received")
+        
+        return jsonify({"session_token": session_token})
+    
+    except Exception as e:
+        logger.error(f"[Simli] Exception: {str(e)[:200]}")
+        return jsonify({"error": str(e)[:100]}), 500
+
+
         return jsonify({
+            "sessionToken": session_token,
             "apiKey": SIMLI_API_KEY,
             "faceId": SIMLI_FACE_ID,
             "handleSilence": True,
@@ -250,7 +287,7 @@ def simli_session():
         })
     
     except Exception as e:
-        logger.error(f"[Simli] Exception: {str(e)[:100]}")
+        logger.error(f"[Simli] Exception: {str(e)[:200]}")
         return jsonify({"error": str(e)[:100]}), 500
 
 

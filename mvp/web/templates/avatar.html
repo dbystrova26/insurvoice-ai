@@ -235,9 +235,9 @@
         return false;
       }
 
-      const { apiKey, faceId, handleSilence, maxSessionLength } = sessData;
+      const { session_token } = sessData;
 
-      console.log('[Simli] Creating RTCPeerConnection with ICE servers: 5');
+      console.log('[Simli] Got session token, creating WebRTC connection...');
       
       // Create RTCPeerConnection
       const pcConfig = {
@@ -287,41 +287,23 @@
 
       console.log('[Simli] Sending to Simli API...');
 
-      // Call Simli directly with credentials in body
-      const streamResp = await fetch('https://api.simli.ai/startAudioToVideoSession', {
+      // Send offer to Simli with session token
+      const answerResp = await fetch('https://api.simli.ai/startAudioToVideoSession', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          faceId: faceId,
-          apiKey: apiKey,
-          isJPG: false,
-          handleSilence: handleSilence,
-          maxSessionLength: maxSessionLength,
+          sessionToken: session_token,
           offer: offer.sdp
         })
       });
 
-      if (!streamResp.ok) {
-        const errText = await streamResp.text();
-        console.error('[Simli] Stream start error:', streamResp.status, errText);
+      if (!answerResp.ok) {
+        const errText = await answerResp.text();
+        console.error('[Simli] Answer error:', answerResp.status, errText);
         return false;
       }
 
-      const streamData = await streamResp.json();
-      console.log('[Simli] Response:', JSON.stringify(streamData).substring(0, 200));
-      
-      // Handle different response formats from Simli
-      let answerSdp = streamData.answer || streamData.sdp || streamData.data;
-      
-      if (!answerSdp) {
-        console.error('[Simli] No SDP in response:', streamData);
-        return false;
-      }
-
-      const answer = new RTCSessionDescription({
-        type: 'answer',
-        sdp: answerSdp
-      });
+      const answerData = await answerResp.json();
 
       await pc.setRemoteDescription(answer);
 
