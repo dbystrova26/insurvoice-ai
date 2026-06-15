@@ -330,14 +330,14 @@
     socket.on('transcript', d => {
       document.getElementById('hearingBar').classList.remove('active');
       document.getElementById('partialTxt').textContent = '';
+      if (d.text === '__greet__') return;
       addMsg('user', d.text);
       showThinking();
     });
 
     socket.on('reply', d => {
       hideThinking();
-      if (d.agent_trace && d.agent_trace.length) renderTrace(d.agent_trace);
-      addMsg('bot', d.reply, d.intent);
+      addMsg('bot', d.reply);
       if (d.escalated) addMsg('escalation',
         'Transferring to a colleague.' + (d.handoff_summary ? ' ' + d.handoff_summary : ''));
 
@@ -346,9 +346,13 @@
         setMicState('speaking');
         setStatus('speaking', 'Speaking…');
 
-        // Send to Simli — it handles both lip sync AND audio playback via avatarAudio element
-        // Do NOT also play via Audio() — that causes double audio
-        sendToSimli(d.audio_base64);
+        // Send to Simli if ready (handles lip sync + audio), else fallback to Audio()
+        if (simliReady) {
+          sendToSimli(d.audio_base64);
+        } else {
+          const audio = new Audio('data:audio/mpeg;base64,' + d.audio_base64);
+          audio.play().catch(() => {});
+        }
 
         // Estimate speech duration to resume listening after avatar finishes
         // MP3 at ~32kbps: bytes * 8 / 32000 seconds, minimum 1s
@@ -429,8 +433,7 @@
       const d = await r.json();
       hideThinking();
       if (!r.ok) { showErr(d.error); return; }
-      if (d.agent_trace && d.agent_trace.length) renderTrace(d.agent_trace);
-      addMsg('bot', d.reply, d.intent);
+      addMsg('bot', d.reply);
       if (d.escalated) addMsg('escalation', 'Transferring to a colleague.');
       if (d.audio_base64) {
         sendToSimli(d.audio_base64);

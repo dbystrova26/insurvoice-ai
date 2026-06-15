@@ -235,12 +235,16 @@ def handle_upload():
 @socketio.on("connect")
 def on_connect():
     join_room(request.sid)
+    sid = _sid()
+    socket_id = request.sid
     emit("connected", {
         "deepgram_available": bool(DEEPGRAM_KEY),
         "elevenlabs_available": bool(ELEVENLABS_KEY),
         "simli_api_key": SIMLI_API_KEY,
         "simli_face_id": SIMLI_FACE_ID,
     })
+    # Auto-greet
+    socketio.start_background_task(_run_turn, sid, "__greet__", socket_id, "en")
 
 
 @socketio.on("start_stream")
@@ -255,10 +259,7 @@ def on_start_stream():
 
     def on_transcript(text: str, is_final: bool, language: str = "en"):
         if is_final:
-            import threading
-            threading.Thread(
-                target=_run_turn, args=(sid, text, socket_id, language), daemon=True
-            ).start()
+            socketio.start_background_task(_run_turn, sid, text, socket_id, language)
         else:
             socketio.emit("partial_transcript", {"text": text}, room=socket_id)
 
@@ -287,10 +288,7 @@ def on_resume_stream():
 
     def on_transcript(text: str, is_final: bool, language: str = "en"):
         if is_final:
-            import threading
-            threading.Thread(
-                target=_run_turn, args=(sid, text, socket_id, language), daemon=True
-            ).start()
+            socketio.start_background_task(_run_turn, sid, text, socket_id, language)
         else:
             socketio.emit("partial_transcript", {"text": text}, room=socket_id)
 

@@ -112,5 +112,6 @@ def fire_n8n_webhook(
         except Exception as e:
             print(f"[n8n] Webhook error: {e}")
 
-    threading.Thread(target=_send, daemon=True).start()
+    import gevent
+    gevent.spawn(_send)
     return True
