@@ -243,7 +243,7 @@
       const SC = (window.SimliClientLib && window.SimliClientLib.SimliClient) || window.SimliClient;
       if (!SC) { console.warn('Simli SDK not loaded'); return; }
 
-      simliClient = new SC(session_token, videoEl, audioEl, null, undefined, 'livekit', 'websockets');
+      simliClient = new SC(session_token, videoEl, audioEl);
       simliClient.on('start', () => {
         simliReady = true;
         document.getElementById('avatarPlaceholder').style.display = 'none';
