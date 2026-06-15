@@ -293,19 +293,18 @@
 
       console.log('[Simli] Sending offer to Simli API...');
 
-      // Send offer to Simli (use /streams/start endpoint with API key auth)
-      console.log('[Simli] Calling /streams/start endpoint with API key auth...');
+      // Send offer to Simli (use legacy /startAudioToVideoSession endpoint - most reliable)
+      console.log('[Simli] Calling /startAudioToVideoSession endpoint...');
       
-      const streamResp = await fetch('https://api.simli.ai/streams/start', {
+      const streamResp = await fetch('https://api.simli.ai/startAudioToVideoSession', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': SIMLI_API_KEY  // ✅ Include API key in header
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          faceId: SIMLI_FACE_ID,      // ✅ Include faceId
-          sessionId: sessionToken,     // ✅ Use sessionId (not sessionToken)
-          offer: offer.sdp
+          sessionToken: sessionToken,
+          offer: offer.sdp,
+          faceId: SIMLI_FACE_ID,
+          handleSilence: true,
+          maxSessionLength: 600
         })
       });
 
@@ -318,7 +317,7 @@
       const streamData = await streamResp.json();
       const answer = new RTCSessionDescription({
         type: 'answer',
-        sdp: streamData.answer || streamData.sdp  // ✅ Handle both response formats
+        sdp: streamData.answer || streamData.sdp
       });
 
       await pc.setRemoteDescription(answer);
