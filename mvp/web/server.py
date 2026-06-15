@@ -2,6 +2,7 @@
 server.py — InsurVoice AI · Flask + SocketIO server
 """
 
+from gevent import monkey; monkey.patch_all()
 import os
 import base64
 import uuid

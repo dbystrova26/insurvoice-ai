@@ -18,7 +18,7 @@ DATABASE_URL = os.getenv("DATABASE_URL", "")
 def _get_conn():
     """Get a database connection."""
     import psycopg2
-    return psycopg2.connect(DATABASE_URL)
+    return psycopg2.connect(connect_timeout=5, options="-c TimeZone=UTC",DATABASE_URL)
 
 
 def find_customer(text: str) -> Optional[dict]:
