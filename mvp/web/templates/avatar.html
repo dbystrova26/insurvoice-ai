@@ -221,21 +221,17 @@
   async function initializeSimli() {
     const videoEl = document.getElementById('avatarVideo');
     const placeholderEl = document.getElementById('avatarPlaceholder');
-    
-    if (!SIMLI_API_KEY || !SIMLI_FACE_ID) {
-      console.warn('⚠️  Simli credentials not set (avatar disabled)');
-      placeholderEl.innerHTML = '<div style="text-align:center;color:var(--muted)">Avatar unavailable<br><small>Simli keys not configured</small></div>';
-      return false;
-    }
 
     try {
-      // Get Simli session token
+      console.log('[Simli] Getting credentials from backend...');
+      
+      // Get Simli credentials from backend
       const sessResp = await fetch('/api/simli/session');
       const sessData = await sessResp.json();
       
-      if (!sessResp.ok) {
-        console.error('Simli session error:', sessData);
-        placeholderEl.innerHTML = '<div style="color:var(--warn)">Avatar connection failed</div>';
+      if (!sessResp.ok || !sessData.apiKey || !sessData.faceId) {
+        console.warn('⚠️  Simli credentials not available (avatar disabled)');
+        placeholderEl.innerHTML = '<div style="text-align:center;color:var(--muted)">Avatar unavailable<br><small>Simli not configured</small></div>';
         return false;
       }
 
