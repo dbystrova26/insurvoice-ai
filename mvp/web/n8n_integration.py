@@ -112,9 +112,5 @@ def fire_n8n_webhook(
         except Exception as e:
             print(f"[n8n] Webhook error: {e}")
 
-    try:
-        from gevent import spawn
-        spawn(_send)
-    except ImportError:
-        threading.Thread(target=_send, daemon=True).start()
+    threading.Thread(target=_send, daemon=True).start()
     return True
