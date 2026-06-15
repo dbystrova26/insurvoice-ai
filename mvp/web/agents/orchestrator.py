@@ -28,11 +28,44 @@ routing happening — a strong visual for a portfolio demo.
 """
 
 import anthropic
-from knowledge import retrieve_context
+from rag import retrieve_context          # pgvector semantic search (falls back to keyword)
+from crm import find_customer, format_customer_context, log_call_to_db
 from .router import RouterAgent
 from .specialists import SPECIALISTS
 from .escalation import EscalationAgent
 from .compliance_guard import ComplianceGuard
+
+
+# ── helpers used by Orchestrator ─────────────────────────────────────────────
+
+def _assess_urgency(intent: str, turn_count: int, handoff_summary: str) -> str:
+    """Mirror of n8n_integration.assess_urgency — reused here for DB logging."""
+    high = ["legal", "lawsuit", "court", "fraud", "emergency", "fire", "flood"]
+    medium = ["angry", "frustrated", "rejected", "denied", "cancel"]
+    text = f"{intent} {handoff_summary}".lower()
+    if any(k in text for k in high):
+        return "high"
+    if any(k in text for k in medium) or turn_count >= 5:
+        return "medium"
+    return "low"
+
+
+def _call_summary(history: list, intent: str, resolved: bool) -> str:
+    """One-line summary for call_log.summary column."""
+    topic_map = {
+        "escalate_human": "escalation to human agent",
+        "file_claim": "filing a claim",
+        "claim_status": "claim status check",
+        "billing_query": "billing query",
+        "policy_renewal": "policy renewal",
+        "cancel_policy": "policy cancellation",
+        "policy_coverage": "policy coverage question",
+    }
+    topic = topic_map.get(intent, intent.replace("_", " "))
+    status = "resolved" if resolved else "unresolved — follow-up required"
+    turns = len([h for h in history if h["role"] == "user"])
+    return f"Customer asked about {topic}. {turns} turn(s). {status}."
+
 
 
 class Orchestrator:
@@ -48,6 +81,7 @@ class Orchestrator:
         self.turn_count = 0
         self.consecutive_unresolved = 0
         self.is_first_turn = True
+        self.customer: dict | None = None    # cached CRM record for this session
 
     # ---- context helpers -------------------------------------------------
 
@@ -70,8 +104,20 @@ class Orchestrator:
             "pt": "Portuguese", "pl": "Polish",
         }
         lang_name = lang_names.get(language, "English")
+
+        # RAG: semantic search over policy_chunks (pgvector), falls back to keyword
+        rag_context = retrieve_context(user_message)
+
+        # CRM: look up customer by name/policy number mentioned in message
+        if not self.customer:
+            self.customer = find_customer(user_message)
+        crm_context = format_customer_context(self.customer) if self.customer else ""
+
+        # Combine: CRM record first so agents can personalise, then policy docs
+        kb_context = "\n\n".join(filter(None, [crm_context, rag_context]))
+
         return {
-            "kb_context": retrieve_context(user_message),
+            "kb_context": kb_context,
             "history_text": self._history_text(),
             "history_section": self._history_section() if not self.is_first_turn else "",
             "is_first_turn": self.is_first_turn,
@@ -179,6 +225,23 @@ class Orchestrator:
         self.history.append({"role": "assistant", "text": final_response})
         self.is_first_turn = False
 
+        # Save to Supabase call_log (non-blocking — errors silently skip)
+        log_call_to_db({
+            "call_id": getattr(self, "call_id", None),
+            "customer_id": self.customer.get("id") if self.customer else None,
+            "language": ctx.get("language", "en"),
+            "intent": intent,
+            "route": route,
+            "escalated": escalate,
+            "resolved": resolved,
+            "turn_count": self.turn_count,
+            "duration_seconds": 0,         # server.py fills this at end of call
+            "compliance_passed": guard_result["compliant"],
+            "urgency": _assess_urgency(intent, self.turn_count, handoff or ""),
+            "summary": _call_summary(self.history, intent, resolved),
+            "handoff_summary": handoff,
+        })
+
         return {
             "response": final_response,
             "intent": intent,
@@ -200,3 +263,5 @@ class Orchestrator:
         self.turn_count = 0
         self.consecutive_unresolved = 0
         self.is_first_turn = True
+        self.customer = None
+        self.call_id = None

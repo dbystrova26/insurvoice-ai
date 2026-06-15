@@ -12,7 +12,17 @@ services:
         sync: false
       - key: ELEVENLABS_API_KEY
         sync: false
+      - key: ELEVENLABS_VOICE_ID
+        sync: false
       - key: OPENAI_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: N8N_WEBHOOK_URL
+        sync: false
+      - key: SIMLI_API_KEY
+        sync: false
+      - key: SIMLI_FACE_ID
         sync: false
       - key: FLASK_SECRET
         generateValue: true

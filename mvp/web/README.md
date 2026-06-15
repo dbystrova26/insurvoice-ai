@@ -1148,6 +1148,58 @@ Use these phrases to showcase every feature:
 
 ---
 
+## Sample Conversations
+
+### Resolved by AI — Policy coverage query
+
+```
+🤖 Tina   Hello, you're speaking with InsurVoice, an AI assistant for Allianz Direct.
+           How can I help you today?
+
+👤 User    Does my home insurance cover water damage from a burst pipe?
+
+🤖 Tina   Yes — burst pipe damage is covered under your Hausratversicherung as
+           Leitungswasser damage. It covers furniture, electronics, flooring, and
+           personal belongings. Your EUR 250 deductible applies. Flooding from
+           external sources like rivers or storms requires separate flood cover.
+           Is this about an active incident?
+
+👤 User    Just checking, thanks.
+
+🤖 Tina   Happy to help! Anything else I can assist with?
+
+👤 User    No, that's all.
+
+🤖 Tina   Great — have a good day!
+
+✅ Resolved by AI  |  Intent: policy_coverage  |  Route: policy  |  Turns: 3
+```
+
+---
+
+### Escalated to human — Billing dispute
+
+```
+🤖 Tina   Hello, you're speaking with InsurVoice, an AI assistant for Allianz Direct.
+           How can I help you today?
+
+👤 User    I was charged twice this month.
+
+🤖 Tina   I'm sorry to hear that. Duplicate charges aren't something I can resolve
+           directly — this needs to be reviewed by our billing team who can see your
+           account. Could I take your policy number so they have your details ready?
+
+👤 User    POL-99821. I want to talk to someone now.
+
+🤖 Tina   Of course. I'm connecting you to a billing specialist right now —
+           average wait time is about 3 minutes. Handing over now.
+
+↗️ Escalated to human  |  Intent: billing_dispute  |  Route: billing → escalation
+   n8n triggered: Gmail briefing + Google Sheets log + Slack alert (#insurvoice-alerts)
+```
+
+---
+
 ## Compliance
 
 | Regulation | Implementation |
