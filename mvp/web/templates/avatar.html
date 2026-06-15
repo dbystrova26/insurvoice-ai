@@ -307,9 +307,19 @@
       }
 
       const streamData = await streamResp.json();
+      console.log('[Simli] Response:', JSON.stringify(streamData).substring(0, 200));
+      
+      // Handle different response formats from Simli
+      let answerSdp = streamData.answer || streamData.sdp || streamData.data;
+      
+      if (!answerSdp) {
+        console.error('[Simli] No SDP in response:', streamData);
+        return false;
+      }
+
       const answer = new RTCSessionDescription({
         type: 'answer',
-        sdp: streamData.answer || streamData.sdp
+        sdp: answerSdp
       });
 
       await pc.setRemoteDescription(answer);
