@@ -14,7 +14,6 @@ from dotenv import load_dotenv
 from agents import Orchestrator
 from voice import synthesize_elevenlabs, DEFAULT_VOICE_ID
 from stream import DeepgramStreamSession, transcribe_streaming_chunk
-from n8n_integration import fire_n8n_webhook
 
 load_dotenv()
 
@@ -29,7 +28,6 @@ DEEPGRAM_KEY   = os.getenv("DEEPGRAM_API_KEY", "")
 VOICE_ID       = os.getenv("ELEVENLABS_VOICE_ID", DEFAULT_VOICE_ID)
 SIMLI_API_KEY  = os.getenv("SIMLI_API_KEY", "")
 SIMLI_FACE_ID  = os.getenv("SIMLI_FACE_ID", "")
-N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
 
 _agents: dict[str, Orchestrator] = {}
 _streams: dict[str, DeepgramStreamSession] = {}
@@ -44,28 +42,24 @@ def _sid() -> str:
 
 def _get_agent(sid: str) -> Orchestrator:
     if sid not in _agents:
-        agent = Orchestrator(ANTHROPIC_KEY)
-        agent.call_id = f"{sid[:8]}-{int(time.time())}"   # stable ID for this session
-        _agents[sid] = agent
+        _agents[sid] = Orchestrator(ANTHROPIC_KEY)
     return _agents[sid]
 
 
 def _run_turn(sid: str, transcript: str, socket_id: str, language: str = "en"):
     transcript = transcript.strip()
-    # Allow __greet__ trigger to pass through
-    if transcript != "__greet__":
-        if not transcript or len(transcript) < 4:
+    if not transcript or len(transcript) < 4:
+        return
+    if transcript.lower() in {"the", "a", "uh", "um", "hmm", "oh", "ah"}:
+        return
+    now = time.time()
+    last_text, last_time = _last_turn.get(sid, ("", 0))
+    if (now - last_time) < 4.0:
+        if transcript == last_text:
             return
-        if transcript.lower() in {"the", "a", "uh", "um", "hmm", "oh", "ah"}:
+        if transcript.lower() in last_text.lower() or last_text.lower() in transcript.lower():
             return
-        now = time.time()
-        last_text, last_time = _last_turn.get(sid, ("", 0))
-        if (now - last_time) < 4.0:
-            if transcript == last_text:
-                return
-            if transcript.lower() in last_text.lower() or last_text.lower() in transcript.lower():
-                return
-        _last_turn[sid] = (transcript, now)
+    _last_turn[sid] = (transcript, now)
 
     socketio.emit("transcript", {"text": transcript, "language": language}, room=socket_id)
     agent = _get_agent(sid)
@@ -77,37 +71,18 @@ def _run_turn(sid: str, transcript: str, socket_id: str, language: str = "en"):
         if tts["success"]:
             audio_b64 = base64.b64encode(tts["audio"]).decode()
 
-    escalated = result.get("should_escalate", False)
     socketio.emit("reply", {
         "transcript": transcript,
         "reply": result["response"],
         "intent": result.get("intent", ""),
         "route": result.get("route", ""),
         "language": language,
-        "escalated": escalated,
+        "escalated": result.get("should_escalate", False),
         "handoff_summary": result.get("handoff_summary"),
         "agent_trace": result.get("agent_trace", []),
         "compliance": result.get("compliance", {}),
         "audio_base64": audio_b64,
     }, room=socket_id)
-
-    # Fire n8n webhook (non-blocking background thread)
-    if N8N_WEBHOOK_URL:
-        agent_obj = _get_agent(sid)
-        fire_n8n_webhook(
-            call_id=agent_obj.call_id,
-            intent=result.get("intent", "unknown"),
-            route=result.get("route", "general"),
-            language=language,
-            turn_count=getattr(agent_obj, "turn_count", 1),
-            resolved=result.get("resolved", False),
-            escalated=escalated,
-            handoff_summary=result.get("handoff_summary", ""),
-            compliance_passed=result.get("compliance", {}).get("compliant", True),
-            conversation_history=getattr(agent_obj, "history", []),
-            customer_name=agent_obj.customer.get("name") if agent_obj.customer else None,
-            customer_email=agent_obj.customer.get("email") if agent_obj.customer else None,
-        )
 
 
 @app.route("/")
@@ -266,15 +241,6 @@ def on_connect():
         "simli_api_key": SIMLI_API_KEY,
         "simli_face_id": SIMLI_FACE_ID,
     })
-    # Auto-greet — fire Tina's opening line immediately on connection
-    import threading
-    sid = _sid()
-    socket_id = request.sid
-    def _auto_greet():
-        import time
-        time.sleep(2)  # wait for Simli avatar to connect
-        _run_turn(sid, "__greet__", socket_id, "en")
-    threading.Thread(target=_auto_greet, daemon=True).start()
 
 
 @socketio.on("start_stream")
