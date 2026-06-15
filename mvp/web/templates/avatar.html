@@ -293,7 +293,7 @@
 
       console.log('[Simli] Sending offer to Simli API...');
 
-      // Send offer to Simli (use legacy /startAudioToVideoSession endpoint - most reliable)
+      // Send offer to Simli (use /startAudioToVideoSession endpoint)
       console.log('[Simli] Calling /startAudioToVideoSession endpoint...');
       
       const streamResp = await fetch('https://api.simli.ai/startAudioToVideoSession', {

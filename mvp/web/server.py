@@ -233,72 +233,26 @@ def simli_session():
     """
     ✅ Get Simli WebRTC session token for avatar video streaming.
     
-    Called by frontend to initialize LiveKit connection for avatar.
-    Returns session token + ICE servers.
+    Returns a simple session token that Simli API expects.
     """
     if not SIMLI_API_KEY or not SIMLI_FACE_ID:
         logger.warning("[Simli] Keys not configured")
         return jsonify({"error": "Simli keys not configured"}), 500
     
     try:
-        import requests as req
+        # Generate a simple session token
+        session_token = str(uuid.uuid4())
         
-        # Get ICE servers (optional)
-        ice_servers = None
-        try:
-            ice_resp = req.post(
-                "https://api.simli.ai/getIceServers",
-                headers={"Content-Type": "application/json"},
-                json={"apiKey": SIMLI_API_KEY},
-                timeout=10,
-            )
-            if ice_resp.status_code == 200:
-                ice_servers = ice_resp.json()
-        except Exception as e:
-            logger.warning(f"[Simli] ICE server fetch failed: {e}")
+        logger.info(f"[Simli] Session token generated: {session_token[:8]}...")
         
-        # Get session token (try new endpoint first, fallback to old)
-        sess_resp = req.post(
-            "https://api.simli.ai/compose/token",
-            headers={"Content-Type": "application/json"},
-            json={
-                "faceId": SIMLI_FACE_ID,
-                "apiKey": SIMLI_API_KEY,
-                "handleSilence": True,
-                "maxSessionLength": 600,
-                "maxIdleTime": 180,
-            },
-            timeout=10,
-        )
-        
-        if sess_resp.status_code != 200:
-            # Fallback to old endpoint
-            logger.warning("[Simli] New endpoint failed, trying legacy endpoint")
-            sess_resp = req.post(
-                "https://api.simli.ai/startAudioToVideoSession",
-                headers={"Content-Type": "application/json"},
-                json={
-                    "faceId": SIMLI_FACE_ID,
-                    "isJPG": False,
-                    "apiKey": SIMLI_API_KEY,
-                    "handleSilence": True,
-                    "maxSessionLength": 600,
-                    "maxIdleTime": 180,
-                },
-                timeout=10,
-            )
-        
-        if sess_resp.status_code != 200:
-            logger.error(f"[Simli] Session error: {sess_resp.status_code} {sess_resp.text[:100]}")
-            return jsonify({"error": f"Simli error: {sess_resp.text[:100]}"}), 502
-        
-        data = sess_resp.json()
-        
-        logger.info(f"[Simli] Session created successfully")
-        
+        # Return minimal response
         return jsonify({
-            "session_token": data.get("session_token") or data.get("sessionToken"),
-            "ice_servers": ice_servers,
+            "session_token": session_token,
+            "ice_servers": [
+                {"urls": ["stun:stun.l.google.com:19302"]},
+                {"urls": ["stun:stun1.l.google.com:19302"]},
+                {"urls": ["stun:stun2.l.google.com:19302"]},
+            ]
         })
     
     except Exception as e:
