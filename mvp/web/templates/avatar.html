@@ -209,6 +209,19 @@
     registerProcessor("pcm-processor", PcmProcessor);
   `;
 
+  // ── Avatar fallback ───────────────────────────────────────────────────────
+  function showAvatarFallback() {
+    const ph = document.getElementById('avatarPlaceholder');
+    if (ph) {
+      ph.innerHTML = `
+        <svg viewBox="0 0 24 24" style="width:80px;height:80px;fill:var(--violet);opacity:0.6">
+          <path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/>
+        </svg>
+        <span style="color:var(--lilac);font-size:13px;margin-top:8px">Tina</span>
+      `;
+    }
+  }
+
   // ── Simli ─────────────────────────────────────────────────────────────────
   async function initSimli() {
     if (!SIMLI_API_KEY || !SIMLI_FACE_ID) return;
@@ -249,11 +262,14 @@
         document.getElementById('avatarPlaceholder').style.display = 'none';
         setStatus('live', 'Live STT ready');
       });
-      simliClient.on('error', e => console.warn('Simli error:', e));
+      simliClient.on('error', e => {
+        console.warn('Simli error:', e);
+        showAvatarFallback();
+      });
       await simliClient.start();
     } catch (e) {
       console.warn('Simli init failed:', e);
-      document.getElementById('avatarStatus').textContent = 'Avatar unavailable';
+      showAvatarFallback();
     }
   }
 
