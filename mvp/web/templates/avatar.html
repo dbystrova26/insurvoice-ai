@@ -330,14 +330,14 @@
     socket.on('transcript', d => {
       document.getElementById('hearingBar').classList.remove('active');
       document.getElementById('partialTxt').textContent = '';
-      if (d.text === '__greet__') return;
       addMsg('user', d.text);
       showThinking();
     });
 
     socket.on('reply', d => {
       hideThinking();
-      addMsg('bot', d.reply);
+      if (d.agent_trace && d.agent_trace.length) renderTrace(d.agent_trace);
+      addMsg('bot', d.reply, d.intent);
       if (d.escalated) addMsg('escalation',
         'Transferring to a colleague.' + (d.handoff_summary ? ' ' + d.handoff_summary : ''));
 
@@ -429,7 +429,8 @@
       const d = await r.json();
       hideThinking();
       if (!r.ok) { showErr(d.error); return; }
-      addMsg('bot', d.reply);
+      if (d.agent_trace && d.agent_trace.length) renderTrace(d.agent_trace);
+      addMsg('bot', d.reply, d.intent);
       if (d.escalated) addMsg('escalation', 'Transferring to a colleague.');
       if (d.audio_base64) {
         if (simliReady) {
