@@ -11,7 +11,7 @@ Responses are kept short and natural because they will be spoken aloud (TTS).
 import json
 import re
 import anthropic
-from knowledge import retrieve_context
+from rag import retrieve_context
 
 
 SYSTEM_PROMPT_TEMPLATE = """You are InsurVoice, an AI voice agent for Allianz Direct insurance. The customer is speaking to you on a voice call — your response will be read aloud by a text-to-speech engine.
