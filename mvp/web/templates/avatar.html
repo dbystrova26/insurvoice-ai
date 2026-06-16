@@ -15,16 +15,13 @@
   *{margin:0;padding:0;box-sizing:border-box}
   body{font-family:'Inter',-apple-system,sans-serif;background:var(--void);
     color:var(--mist);min-height:100vh;overflow-x:hidden}
-
   .ambient{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
   .lens{position:absolute;border-radius:50%;border:1px solid var(--line)}
   .l1{width:680px;height:680px;top:-200px;right:-160px;
     background:radial-gradient(circle at 30% 30%,rgba(109,74,255,.16),transparent 60%)}
   .l2{width:480px;height:480px;bottom:-220px;left:-120px;
     background:radial-gradient(circle at 60% 40%,rgba(109,74,255,.12),transparent 60%)}
-
   .wrap{position:relative;z-index:1;max-width:960px;margin:0 auto;padding:24px}
-
   header{display:flex;align-items:center;justify-content:space-between;margin-bottom:28px}
   .brand{display:flex;align-items:center;gap:12px}
   .mark{width:34px;height:34px;position:relative;flex-shrink:0}
@@ -40,27 +37,19 @@
   .dot.hearing{background:var(--vbright);box-shadow:0 0 8px var(--vbright);animation:pdot 1s infinite}
   .dot.speaking{background:var(--warn);box-shadow:0 0 8px var(--warn)}
   @keyframes pdot{0%,100%{opacity:1}50%{opacity:.4}}
-
   .main{display:grid;grid-template-columns:400px 1fr;gap:28px;align-items:start}
-
   .avatar-panel{display:flex;flex-direction:column;align-items:center;gap:16px}
-  .avatar-frame{
-    width:380px;height:380px;border-radius:24px;overflow:hidden;
+  .avatar-frame{width:380px;height:380px;border-radius:24px;overflow:hidden;
     background:var(--deep);border:1px solid var(--line);position:relative;
-    display:flex;align-items:center;justify-content:center;
-  }
+    display:flex;align-items:center;justify-content:center}
   #avatarVideo{width:100%;height:100%;object-fit:cover;border-radius:24px}
   #avatarAudio{display:none}
   .avatar-placeholder{display:flex;flex-direction:column;align-items:center;gap:12px;color:var(--muted)}
   .avatar-placeholder svg{width:64px;height:64px;fill:var(--muted);opacity:.4}
-
   .mic-row{display:flex;align-items:center;gap:14px}
-  .mic-btn{
-    width:64px;height:64px;border-radius:50%;border:none;cursor:pointer;
+  .mic-btn{width:64px;height:64px;border-radius:50%;border:none;cursor:pointer;
     background:var(--violet);display:flex;align-items:center;justify-content:center;
-    transition:transform .2s,background .3s;
-    box-shadow:0 4px 20px rgba(109,74,255,.4);
-  }
+    transition:transform .2s,background .3s;box-shadow:0 4px 20px rgba(109,74,255,.4)}
   .mic-btn:hover{transform:scale(1.06)}
   .mic-btn svg{width:28px;height:28px;fill:#fff}
   .mic-btn.hearing{background:#4ADE80;animation:pulse 1.2s infinite}
@@ -68,41 +57,34 @@
   @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(74,222,128,.5)}
     70%{box-shadow:0 0 0 22px rgba(74,222,128,0)}100%{box-shadow:0 0 0 0 rgba(74,222,128,0)}}
   .mic-label{font-size:13px;font-weight:600;color:var(--mist)}
-
   .hearing-bar{background:rgba(74,222,128,.07);border:1px solid rgba(74,222,128,.2);
     border-radius:8px;padding:8px 14px;font-size:13px;color:#4ADE80;
     width:380px;display:none;text-align:center}
   .hearing-bar.active{display:block}
-
   .convo-panel{display:flex;flex-direction:column;gap:12px}
   .convo-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
   .convo-title{font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}
   .reset-btn{background:transparent;border:1px solid var(--line);color:var(--muted);
     font-family:inherit;font-size:12px;padding:5px 12px;border-radius:7px;cursor:pointer;transition:all .2s}
   .reset-btn:hover{border-color:var(--violet);color:var(--mist)}
-
   .convo{display:flex;flex-direction:column;gap:10px;max-height:420px;overflow-y:auto;padding-right:4px}
   .convo::-webkit-scrollbar{width:4px}
   .convo::-webkit-scrollbar-thumb{background:var(--line);border-radius:4px}
-
   .msg{max-width:90%;padding:11px 15px;border-radius:14px;font-size:13.5px;line-height:1.55;animation:rise .3s ease}
   @keyframes rise{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
   .msg.user{align-self:flex-end;background:var(--violet);color:#fff;border-bottom-right-radius:3px}
   .msg.bot{align-self:flex-start;background:var(--panel);border:1px solid var(--line);border-bottom-left-radius:3px}
   .msg.bot .tag{display:block;font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:var(--vbright);font-weight:700;margin-bottom:4px}
   .msg.escalation{align-self:stretch;max-width:100%;background:rgba(255,185,81,.07);border:1px solid rgba(255,185,81,.3);color:var(--warn);font-size:12px}
-
   .trace{background:rgba(109,74,255,.04);border:1px solid var(--line);border-radius:8px;padding:9px 12px}
   .trace-title{font-size:9px;text-transform:uppercase;letter-spacing:.12em;color:var(--vbright);font-weight:700;margin-bottom:5px}
   .trace-step{font-size:11px;padding:2px 0;color:var(--muted)}
   .trace-step .ag{color:var(--lilac);font-weight:700}
   .trace-step .act{color:var(--vbright);font-weight:600;margin-left:6px}
-
   .thinking{color:var(--muted);font-size:12px;display:flex;align-items:center;gap:6px;padding:4px 0}
   .blip{width:5px;height:5px;border-radius:50%;background:var(--vbright);animation:blink 1.2s infinite}
   .blip:nth-child(2){animation-delay:.2s}.blip:nth-child(3){animation-delay:.4s}
   @keyframes blink{0%,60%,100%{opacity:.3}30%{opacity:1}}
-
   .text-row{display:flex;gap:8px;margin-top:8px}
   .text-row input{flex:1;background:var(--panel);border:1px solid var(--line);
     border-radius:9px;padding:10px 14px;color:var(--mist);font-family:inherit;
@@ -111,15 +93,12 @@
   .send-btn{background:var(--violet);border:none;color:#fff;font-family:inherit;
     font-weight:600;padding:0 18px;border-radius:9px;cursor:pointer;transition:background .2s}
   .send-btn:hover{background:var(--vbright)}
-
   .pills{display:flex;flex-wrap:wrap;gap:7px;margin-top:20px}
   .pill{background:var(--panel);border:1px solid var(--line);border-radius:16px;
     padding:4px 11px;font-size:10px;color:var(--muted)}
   .pill b{color:var(--lilac)}
-
   .err{color:#FF6B8A;font-size:13px;padding:6px;display:none;text-align:center}
   .err.show{display:block}
-
   @media(max-width:700px){
     .main{grid-template-columns:1fr}
     .avatar-frame{width:100%;height:280px}
@@ -129,7 +108,6 @@
 </head>
 <body>
 <div class="ambient"><div class="lens l1"></div><div class="lens l2"></div></div>
-
 <div class="wrap">
   <header>
     <div class="brand">
@@ -143,30 +121,26 @@
   </header>
 
   <div class="main">
-    <!-- LEFT: Avatar -->
     <div class="avatar-panel">
       <div class="avatar-frame">
         <video id="avatarVideo" autoplay playsinline></video>
-        <!-- FIX: always muted — we play audio via browser directly, not Simli -->
+        <!-- permanently muted — audio plays via browser directly -->
         <audio id="avatarAudio" autoplay muted></audio>
         <div class="avatar-placeholder" id="avatarPlaceholder">
           <svg viewBox="0 0 24 24"><path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/></svg>
           <span id="avatarStatus">Tap mic to start</span>
         </div>
       </div>
-
       <div class="mic-row">
         <button class="mic-btn" id="micBtn" onclick="if(window.toggleLive)window.toggleLive()" aria-label="Microphone">
           <svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 003-3V5a3 3 0 00-6 0v6a3 3 0 003 3zm5-3a5 5 0 01-10 0H5a7 7 0 006 6.92V21h2v-3.08A7 7 0 0019 11h-2z"/></svg>
         </button>
         <div class="mic-label" id="micLabel">Tap to speak</div>
       </div>
-
       <div class="hearing-bar" id="hearingBar">🎤 <span id="partialTxt"></span></div>
       <div id="errBox" class="err"></div>
     </div>
 
-    <!-- RIGHT: Conversation -->
     <div class="convo-panel">
       <div class="convo-head">
         <span class="convo-title">Conversation</span>
@@ -189,7 +163,6 @@
 </div>
 
 <script>
-  // ── State ─────────────────────────────────────────────────────────────────
   let socket = null;
   let mediaStream = null;
   let processor = null;
@@ -199,18 +172,15 @@
   let simliClient = null;
   let simliReady = false;
   let deepgramAvailable = false;
-
   let SIMLI_API_KEY = '';
   let SIMLI_FACE_ID = '';
-
   let audioUnlocked = false;
   let pendingGreetingAudio = null;
 
   function unlockAudio() {
     if (audioUnlocked) return;
     audioUnlocked = true;
-    // FIX: do NOT unmute or play avatarAudio — we handle audio directly
-    // Play any greeting that arrived before user interaction
+    // Do NOT touch avatarAudio — it stays muted forever
     if (pendingGreetingAudio) {
       const a = new Audio('data:audio/mpeg;base64,' + pendingGreetingAudio);
       a.play().catch(() => {});
@@ -220,7 +190,6 @@
   document.addEventListener('click', unlockAudio, { once: false });
   document.addEventListener('keydown', unlockAudio, { once: false });
 
-  // AudioWorklet for mic → PCM16
   const WORKLET = `
     class PcmProcessor extends AudioWorkletProcessor {
       constructor() {
@@ -252,7 +221,6 @@
     registerProcessor("pcm-processor", PcmProcessor);
   `;
 
-  // ── Simli initialisation ──────────────────────────────────────────────────
   async function initSimli() {
     if (!SIMLI_API_KEY || !SIMLI_FACE_ID) {
       document.getElementById('avatarStatus').textContent = 'No Simli keys configured';
@@ -260,33 +228,23 @@
     }
     try {
       document.getElementById('avatarStatus').textContent = 'Loading avatar…';
-
       const r = await fetch('/api/simli/session');
       if (!r.ok) { showErr('Could not get Simli session'); return; }
-      const { session_token, ice_servers } = await r.json();
+      const { session_token } = await r.json();
 
       const videoEl = document.getElementById('avatarVideo');
       const audioEl = document.getElementById('avatarAudio');
-
       const SC = (window.SimliClientLib && window.SimliClientLib.SimliClient) || window.SimliClient;
-      if (!SC) { document.getElementById("avatarStatus").textContent = "Simli SDK not loaded"; return; }
+      if (!SC) { document.getElementById('avatarStatus').textContent = 'Simli SDK not loaded'; return; }
 
-      simliClient = new SC(
-        session_token,
-        videoEl,
-        audioEl,
-        null,
-        undefined,
-        "livekit",
-        "websockets",
-      );
+      simliClient = new SC(session_token, videoEl, audioEl, null, undefined, 'livekit', 'websockets');
 
       simliClient.on('start', () => {
         simliReady = true;
         document.getElementById('avatarPlaceholder').style.display = 'none';
         document.getElementById('avatarStatus').textContent = 'Avatar ready';
         setStatus('live', 'Avatar ready');
-        // FIX: aggressively silence Simli's audio output — we play MP3 directly
+        // Aggressively silence Simli audio — we play MP3 directly
         const aEl = document.getElementById('avatarAudio');
         if (aEl) {
           aEl.muted = true;
@@ -297,8 +255,7 @@
       });
 
       simliClient.on('stop', () => { simliReady = false; });
-      simliClient.on('error', (e) => { console.warn('Simli error:', e); });
-
+      simliClient.on('error', e => console.warn('Simli error:', e));
       await simliClient.start();
     } catch (e) {
       console.warn('Simli init failed:', e);
@@ -306,28 +263,22 @@
     }
   }
 
-  // Send PCM16 audio to Simli for lip-sync
   async function sendToSimli(audioBase64) {
     if (!simliReady || !simliClient) return;
     try {
       const binary = atob(audioBase64);
       const bytes = new Uint8Array(binary.length);
       for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-
       const decodeCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
       const audioBuffer = await decodeCtx.decodeAudioData(bytes.buffer.slice(0));
       await decodeCtx.close();
-
       const float32 = audioBuffer.getChannelData(0);
       const int16 = new Int16Array(float32.length);
       for (let i = 0; i < float32.length; i++) {
         int16[i] = Math.max(-32768, Math.min(32767, Math.round(float32[i] * 32767)));
       }
-
       simliClient.sendAudioData(new Uint8Array(int16.buffer));
-    } catch (e) {
-      console.warn('Simli send error:', e);
-    }
+    } catch (e) { console.warn('Simli send error:', e); }
   }
 
   function closeSimli() {
@@ -336,15 +287,13 @@
         if (typeof simliClient.close === 'function') simliClient.close();
         else if (typeof simliClient.stop === 'function') simliClient.stop();
       }
-    } catch (e) { /* ignore */ }
+    } catch (e) {}
     simliClient = null;
     simliReady = false;
   }
-
   window.addEventListener('beforeunload', closeSimli);
   window.addEventListener('pagehide', closeSimli);
 
-  // ── SocketIO ──────────────────────────────────────────────────────────────
   function initSocket() {
     socket = io();
 
@@ -383,7 +332,6 @@
         setMicState('speaking');
         setStatus('speaking', 'Speaking…');
 
-        // Play audio directly in browser (single source — no Simli audio)
         if (!audioUnlocked) {
           pendingGreetingAudio = d.audio_base64;
           setStatus('ready', 'Tap anywhere to hear the greeting');
@@ -392,10 +340,7 @@
           audio.play().catch(() => {});
         }
 
-        // Send PCM to Simli for lip-sync only (audio is muted on Simli side)
-        if (simliReady) {
-          sendToSimli(d.audio_base64);
-        }
+        if (simliReady) sendToSimli(d.audio_base64);
 
         const bytes = atob(d.audio_base64).length;
         const estimatedMs = Math.max(1000, (bytes * 8 / 32000) * 1000);
@@ -417,7 +362,6 @@
     socket.on('disconnect', () => setStatus('offline', 'Offline'));
   }
 
-  // ── Mic control ───────────────────────────────────────────────────────────
   window.toggleLive = async function() {
     if (!deepgramAvailable) { showErr('No Deepgram key — use text box.'); return; }
     if (isLive) { stopLive(); return; }
@@ -444,9 +388,7 @@
       setMicState('hearing');
       document.getElementById('micLabel').textContent = 'Tap to stop';
       setStatus('hearing', 'Hearing you…');
-    } catch (e) {
-      showErr('Mic error: ' + e.message);
-    }
+    } catch (e) { showErr('Mic error: ' + e.message); }
   };
 
   function stopLive() {
@@ -462,7 +404,6 @@
     isSpeaking = false;
   }
 
-  // ── Text input ────────────────────────────────────────────────────────────
   window.sendText = async function() {
     const input = document.getElementById('textIn');
     const text = input.value.trim();
@@ -472,7 +413,11 @@
     showThinking();
     try {
       const r = await fetch('/api/text', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Socket-ID': socket ? socket.id : ''   // pass socket ID so server reuses session agent
+        },
         body: JSON.stringify({ text, tts: true })
       });
       const d = await r.json();
@@ -482,16 +427,13 @@
       addMsg('bot', d.reply, d.intent);
       if (d.escalated) addMsg('escalation', 'Transferring to a colleague.');
       if (d.audio_base64) {
-        if (simliReady) {
-          sendToSimli(d.audio_base64);
-        }
+        if (simliReady) sendToSimli(d.audio_base64);
         const audio = new Audio('data:audio/mpeg;base64,' + d.audio_base64);
         audio.play().catch(() => {});
       }
     } catch (e) { hideThinking(); showErr('Error: ' + e.message); }
   };
 
-  // ── UI helpers ────────────────────────────────────────────────────────────
   function addMsg(role, text, intent) {
     const c = document.getElementById('convo');
     const d = document.createElement('div');
@@ -548,12 +490,14 @@
 
   window.resetCall = async function() {
     stopLive();
-    await fetch('/api/reset', { method: 'POST' });
+    await fetch('/api/reset', {
+      method: 'POST',
+      headers: { 'X-Socket-ID': socket ? socket.id : '' }
+    });
     document.getElementById('convo').innerHTML = '';
     document.getElementById('hearingBar').classList.remove('active');
   };
 
-  // ── Boot ──────────────────────────────────────────────────────────────────
   fetch('/api/health').then(r => r.json()).then(d => {
     if (!d.anthropic) showErr('Missing ANTHROPIC_API_KEY');
   }).catch(() => {});

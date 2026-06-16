@@ -2,6 +2,7 @@
 server.py – InsurVoice AI backend
 Threading async mode — works with gunicorn sync worker on Render.
 4-second greeting delay so Simli is ready before audio plays.
+/api/text uses the existing session agent via X-Socket-ID header.
 """
 
 import os
@@ -52,7 +53,6 @@ sessions: dict[str, dict] = {}
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def make_tts_mp3(text: str) -> str | None:
-    """Return base64-encoded MP3 or None on failure."""
     try:
         mp3_bytes = synthesize_elevenlabs_mp3(text)
         return base64.b64encode(mp3_bytes).decode()
@@ -62,7 +62,6 @@ def make_tts_mp3(text: str) -> str | None:
 
 
 def agent_and_tts(sid: str, text: str):
-    """Run agent + TTS in background thread, emit reply to client."""
     session = sessions.get(sid)
     if not session:
         return
@@ -132,7 +131,6 @@ def health():
 
 @app.route("/api/simli/session")
 def simli_session():
-    """Browser fetches this to get a Simli session token."""
     if not SIMLI_API_KEY:
         return jsonify({"error": "SIMLI_API_KEY not configured"}), 503
     try:
@@ -161,18 +159,25 @@ def simli_session():
 
 @app.route("/api/text", methods=["POST"])
 def api_text():
-    """Text-input fallback used by the Send button."""
     body = request.get_json(silent=True) or {}
     text = (body.get("text") or "").strip()
     if not text:
         return jsonify({"error": "empty text"}), 400
 
-    agent  = InsurVoiceAgent(api_key=ANTHROPIC_KEY)
+    # Use the existing session agent so conversation history is preserved
+    # and the agent doesn't re-introduce itself on every typed message
+    sid = request.headers.get("X-Socket-ID", "")
+    session = sessions.get(sid)
+    if session:
+        agent = session["agent"]
+    else:
+        agent = InsurVoiceAgent(api_key=ANTHROPIC_KEY)
+
     result = agent.respond(text)
     reply_text = result["response"]
 
     audio_b64 = None
-    if body.get("tts") and ELEVENLABS_KEY:
+    if ELEVENLABS_KEY:
         audio_b64 = make_tts_mp3(reply_text)
 
     return jsonify({
@@ -187,7 +192,6 @@ def api_text():
 
 @app.route("/api/reset", methods=["POST"])
 def api_reset():
-    """Reset the agent conversation (New Call button)."""
     sid = request.headers.get("X-Socket-ID", "")
     if sid and sid in sessions:
         sessions[sid]["agent"].reset()
@@ -216,7 +220,6 @@ def on_connect():
         "simli_face_id":      SIMLI_FACE_ID,
     })
 
-    # Delay greeting by 4s so Simli has time to connect and lip-sync works
     def _delayed_greeting():
         time.sleep(4)
         agent_and_tts(sid, "Hello, please greet the customer.")
@@ -248,11 +251,7 @@ def on_start_stream():
             socketio.emit("partial_transcript", {"text": text}, to=sid)
             return
         socketio.emit("transcript", {"text": text, "language": language}, to=sid)
-        threading.Thread(
-            target=agent_and_tts,
-            args=(sid, text),
-            daemon=True,
-        ).start()
+        threading.Thread(target=agent_and_tts, args=(sid, text), daemon=True).start()
 
     dg = DeepgramStreamSession(api_key=DEEPGRAM_KEY, on_transcript=on_transcript)
     dg.start()
@@ -276,7 +275,6 @@ def on_resume_stream():
 
 @socketio.on("audio_chunk")
 def on_audio_chunk(data):
-    """Raw PCM16 from browser AudioWorklet → Deepgram."""
     sid = request.sid
     session = sessions.get(sid)
     if not session:
