@@ -2,16 +2,24 @@ services:
   - type: web
     name: insurvoice-ai
     runtime: python
-    rootDir: mvp
+    rootDir: mvp/web
     buildCommand: pip install -r requirements.txt && python download_data.py
-    startCommand: streamlit run app.py --server.port $PORT --server.address 0.0.0.0
+    startCommand: gunicorn server:app --worker-class eventlet --workers 1 --bind 0.0.0.0:$PORT --timeout 120
     envVars:
       - key: ANTHROPIC_API_KEY
-        sync: false           # set manually in Render dashboard
-      - key: OPENAI_API_KEY
-        sync: false           # set manually — used for Whisper STT
+        sync: false
+      - key: DEEPGRAM_API_KEY
+        sync: false
       - key: ELEVENLABS_API_KEY
-        sync: false           # set manually — used for TTS
+        sync: false
+      - key: ELEVENLABS_VOICE_ID
+        sync: false
+      - key: SIMLI_API_KEY
+        sync: false
+      - key: SIMLI_FACE_ID
+        sync: false
+      - key: FLASK_SECRET
+        generateValue: true
       - key: PYTHON_VERSION
         value: "3.11.0"
-    plan: free                # sleeps after 15 min; first load ~30s
+    plan: free
