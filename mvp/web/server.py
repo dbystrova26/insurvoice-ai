@@ -1,7 +1,7 @@
 """
 server.py – InsurVoice AI backend
 Threading async mode — works with gunicorn sync worker on Render.
-4-second greeting delay so Simli is ready before audio plays.
+6-second greeting delay so Simli is ready before audio plays.
 /api/text uses the existing session agent via X-Socket-ID header.
 """
 
@@ -164,8 +164,7 @@ def api_text():
     if not text:
         return jsonify({"error": "empty text"}), 400
 
-    # Use the existing session agent so conversation history is preserved
-    # and the agent doesn't re-introduce itself on every typed message
+    # Reuse existing session agent so conversation history is preserved
     sid = request.headers.get("X-Socket-ID", "")
     session = sessions.get(sid)
     if session:
@@ -220,10 +219,11 @@ def on_connect():
         "simli_face_id":      SIMLI_FACE_ID,
     })
 
+    # 6s delay so Simli has time to connect before greeting audio plays
     def _delayed_greeting():
         time.sleep(6)
-        if sid in sessions:  # only greet if still connected
-        agent_and_tts(sid, "Hello, please greet the customer.")
+        if sid in sessions:
+            agent_and_tts(sid, "Hello, please greet the customer.")
 
     threading.Thread(target=_delayed_greeting, daemon=True).start()
 
