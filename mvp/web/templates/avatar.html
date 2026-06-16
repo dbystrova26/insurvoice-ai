@@ -332,19 +332,7 @@
         setMicState('speaking');
         setStatus('speaking', 'Speaking…');
 
-        if (!audioUnlocked) {
-          pendingGreetingAudio = d.audio_base64;
-          setStatus('ready', 'Tap anywhere to hear the greeting');
-        } else {
-          const audio = new Audio('data:audio/mpeg;base64,' + d.audio_base64);
-          audio.play().catch(() => {});
-        }
-
-        if (simliReady) sendToSimli(d.audio_base64);
-
-        const bytes = atob(d.audio_base64).length;
-        const estimatedMs = Math.max(500, (bytes * 8 / 64000) * 1000);
-        setTimeout(() => {
+        const onAudioDone = () => {
           isSpeaking = false;
           if (isLive && !d.escalated) {
             setMicState('hearing');
@@ -354,7 +342,21 @@
             setMicState('idle');
             setStatus('live', 'Live STT ready');
           }
-        }, estimatedMs);
+        };
+
+        if (!audioUnlocked) {
+          pendingGreetingAudio = d.audio_base64;
+          setStatus('ready', 'Tap anywhere to hear the greeting');
+          // Fallback timer for pending audio
+          setTimeout(onAudioDone, 4000);
+        } else {
+          const audio = new Audio('data:audio/mpeg;base64,' + d.audio_base64);
+          audio.onended = onAudioDone;
+          audio.onerror = onAudioDone;  // reopen mic even if audio fails
+          audio.play().catch(() => { onAudioDone(); });
+        }
+
+        if (simliReady) sendToSimli(d.audio_base64);
       }
     });
 
