@@ -5,3 +5,4 @@ requests>=2.31
 python-dotenv>=1.0
 gunicorn>=21.2
 anthropic>=0.25.0
+websockets>=12.0
