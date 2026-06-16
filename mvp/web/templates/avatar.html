@@ -243,8 +243,10 @@
         super();
         this._buf = [];
         this._count = 0;
-        // 16000 Hz * 0.1s = 1600 samples per send
-        this._target = 1600;
+        // 16000 Hz * 0.04s = 640 samples per send (~40ms)
+        // Small enough for accurate Deepgram interim results, large enough
+        // to avoid flooding the Socket.IO polling transport.
+        this._target = 640;
       }
       process(inputs) {
         const ch = inputs[0][0];
@@ -304,13 +306,10 @@
         document.getElementById('avatarPlaceholder').style.display = 'none';
         document.getElementById('avatarStatus').textContent = 'Avatar ready';
         setStatus('live', 'Avatar ready');
-        // Make sure the avatar's audio track is audible
+        // We play TTS through the browser (reliable). Mute Simli's own audio
+        // element so we don't get doubled or conflicting audio.
         const aEl = document.getElementById('avatarAudio');
-        if (aEl) {
-          aEl.muted = false;
-          aEl.volume = 1.0;
-          aEl.play && aEl.play().catch(() => {});
-        }
+        if (aEl) { aEl.muted = true; }
       });
 
       simliClient.on('stop', () => {
@@ -411,18 +410,21 @@
         setMicState('speaking');
         setStatus('speaking', 'Speaking…');
 
-        // If Simli avatar is connected, let it handle lip sync + audio.
-        // Otherwise fall back to plain browser audio so the user still hears the reply.
-        if (simliReady) {
-          sendToSimli(d.audio_base64);
-        } else if (!audioUnlocked) {
-          // Greeting arrived before any user interaction — queue it.
-          // It will play on the first click/tap (browser autoplay policy).
+        // VOICE: always play the TTS audio directly in the browser — this is the
+        // reliable path. (Simli's own audio playback has been unreliable.)
+        if (!audioUnlocked) {
+          // Audio arrived before any user interaction — queue it for first tap.
           pendingGreetingAudio = d.audio_base64;
           setStatus('ready', 'Tap anywhere to hear the greeting');
         } else {
           const audio = new Audio('data:audio/mpeg;base64,' + d.audio_base64);
           audio.play().catch(() => {});
+        }
+
+        // LIP-SYNC (best effort): also feed the audio to Simli to animate the
+        // mouth. If it fails, the voice above still plays.
+        if (simliReady) {
+          sendToSimli(d.audio_base64);
         }
 
         // Estimate speech duration to resume listening after avatar finishes
