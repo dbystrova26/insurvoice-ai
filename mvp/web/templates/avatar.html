@@ -233,9 +233,19 @@
   document.addEventListener('click', unlockAudio, { once: false });
   document.addEventListener('keydown', unlockAudio, { once: false });
 
-  // AudioWorklet for mic → PCM16
+  // AudioWorklet for mic → PCM16.
+  // Buffers ~100ms of audio before posting, so we send far fewer (larger)
+  // messages — this prevents flooding the Socket.IO polling transport
+  // ("Too many packets in payload").
   const WORKLET = `
     class PcmProcessor extends AudioWorkletProcessor {
+      constructor() {
+        super();
+        this._buf = [];
+        this._count = 0;
+        // 16000 Hz * 0.1s = 1600 samples per send
+        this._target = 1600;
+      }
       process(inputs) {
         const ch = inputs[0][0];
         if (!ch) return true;
@@ -243,7 +253,16 @@
         for (let i = 0; i < ch.length; i++) {
           pcm[i] = Math.max(-32768, Math.min(32767, ch[i] * 32768));
         }
-        this.port.postMessage(pcm.buffer, [pcm.buffer]);
+        this._buf.push(pcm);
+        this._count += pcm.length;
+        if (this._count >= this._target) {
+          const merged = new Int16Array(this._count);
+          let off = 0;
+          for (const b of this._buf) { merged.set(b, off); off += b.length; }
+          this.port.postMessage(merged.buffer, [merged.buffer]);
+          this._buf = [];
+          this._count = 0;
+        }
         return true;
       }
     }
@@ -285,6 +304,13 @@
         document.getElementById('avatarPlaceholder').style.display = 'none';
         document.getElementById('avatarStatus').textContent = 'Avatar ready';
         setStatus('live', 'Avatar ready');
+        // Make sure the avatar's audio track is audible
+        const aEl = document.getElementById('avatarAudio');
+        if (aEl) {
+          aEl.muted = false;
+          aEl.volume = 1.0;
+          aEl.play && aEl.play().catch(() => {});
+        }
       });
 
       simliClient.on('stop', () => {

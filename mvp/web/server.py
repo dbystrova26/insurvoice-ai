@@ -37,6 +37,7 @@ socketio = SocketIO(
     transports=["polling"],
     ping_timeout=60,
     ping_interval=25,
+    max_http_buffer_size=10_000_000,  # allow larger audio payloads
 )
 
 ANTHROPIC_KEY  = os.getenv("ANTHROPIC_API_KEY", "")
