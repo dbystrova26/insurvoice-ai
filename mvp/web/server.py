@@ -1,23 +1,13 @@
 """
 server.py – InsurVoice AI backend
-Matches the existing avatar.html frontend exactly.
-
-Frontend expects:
-  Socket events IN:  connect, start_stream, stop_stream, resume_stream, audio_chunk
-  Socket events OUT: connected, stream_ready, partial_transcript, transcript, reply
-  REST routes:       GET /api/simli/session
-                     GET /api/health
-                     POST /api/text
-                     POST /api/reset
-
-Audio pipeline:
-  Mic PCM16 → audio_chunk → Deepgram streaming STT → agent → ElevenLabs MP3
-  → reply{audio_base64} → browser plays audio + sends PCM to Simli for lip-sync
+Eventlet async mode — fixes gevent-websocket recursion error on Render.
+Monkey-patch must happen before all other imports.
 """
 
+import eventlet
+eventlet.monkey_patch()  # must be first — before requests, anthropic, etc.
+
 import os
-import io
-import json
 import uuid
 import base64
 import logging
@@ -28,7 +18,7 @@ from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit
 
 from agent import InsurVoiceAgent
-from stream import DeepgramStreamSession, transcribe_chunk
+from stream import DeepgramStreamSession
 from voice import synthesize_elevenlabs_mp3
 from n8n_integration import fire_n8n_webhook
 
@@ -41,7 +31,7 @@ app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET", "dev-secret")
 socketio = SocketIO(
     app,
     cors_allowed_origins="*",
-    async_mode="gevent",
+    async_mode="eventlet",          # ← eventlet, not gevent
     transports=["websocket", "polling"],
     ping_timeout=60,
     ping_interval=25,
@@ -53,13 +43,11 @@ socketio = SocketIO(
 ANTHROPIC_KEY    = os.environ.get("ANTHROPIC_API_KEY", "")
 DEEPGRAM_KEY     = os.environ.get("DEEPGRAM_API_KEY", "")
 ELEVENLABS_KEY   = os.environ.get("ELEVENLABS_API_KEY", "")
-ELEVENLABS_VOICE = os.environ.get("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
 SIMLI_API_KEY    = os.environ.get("SIMLI_API_KEY", "")
 SIMLI_FACE_ID    = os.environ.get("SIMLI_FACE_ID", "tmp9i8bbq7")
 N8N_WEBHOOK_URL  = os.environ.get("N8N_WEBHOOK_URL", "")
 
 # ── Per-socket state ─────────────────────────────────────────────────────────
-# { sid: { agent, dg_session, call_id, turn_count, start_time } }
 sessions: dict[str, dict] = {}
 
 
@@ -76,7 +64,7 @@ def make_tts_mp3(text: str) -> str | None:
 
 
 def agent_and_tts(sid: str, text: str):
-    """Run agent + TTS in background, emit reply to client."""
+    """Run agent + TTS, emit reply to client."""
     session = sessions.get(sid)
     if not session:
         return
@@ -86,20 +74,17 @@ def agent_and_tts(sid: str, text: str):
         result     = agent.respond(text)
         reply_text = result["response"]
         audio_b64  = make_tts_mp3(reply_text)
-
         session["turn_count"] += 1
 
-        payload = {
-            "reply":       reply_text,
-            "intent":      result.get("intent", ""),
-            "escalated":   result.get("should_escalate", False),
+        socketio.emit("reply", {
+            "reply":           reply_text,
+            "intent":          result.get("intent", ""),
+            "escalated":       result.get("should_escalate", False),
             "handoff_summary": result.get("handoff_summary", ""),
-            "audio_base64": audio_b64,
-            "agent_trace": [],
-        }
-        socketio.emit("reply", payload, to=sid)
+            "audio_base64":    audio_b64,
+            "agent_trace":     [],
+        }, to=sid)
 
-        # n8n webhook (non-blocking, best-effort)
         if N8N_WEBHOOK_URL and result.get("should_escalate"):
             fire_n8n_webhook(
                 call_id=session["call_id"],
@@ -137,20 +122,17 @@ def avatar():
 @app.route("/api/health")
 def health():
     return jsonify({
-        "status":    "ok",
-        "anthropic": bool(ANTHROPIC_KEY),
-        "deepgram":  bool(DEEPGRAM_KEY),
+        "status":     "ok",
+        "anthropic":  bool(ANTHROPIC_KEY),
+        "deepgram":   bool(DEEPGRAM_KEY),
         "elevenlabs": bool(ELEVENLABS_KEY),
-        "simli":     bool(SIMLI_API_KEY),
+        "simli":      bool(SIMLI_API_KEY),
     })
 
 
 @app.route("/api/simli/session")
 def simli_session():
-    """
-    Called by the browser JS to get a Simli session token.
-    Keeps the API key server-side.
-    """
+    """Browser fetches this to get a Simli session token (keeps API key server-side)."""
     if not SIMLI_API_KEY:
         return jsonify({"error": "SIMLI_API_KEY not configured"}), 503
     try:
@@ -169,7 +151,6 @@ def simli_session():
         return jsonify({
             "session_token": data.get("session_token") or data.get("token", ""),
             "ice_servers":   data.get("ice_servers", []),
-            # also expose livekit fields in case the SDK needs them
             "livekit_url":   data.get("livekit_url", ""),
             "livekit_token": data.get("livekit_token", ""),
         })
@@ -180,14 +161,13 @@ def simli_session():
 
 @app.route("/api/text", methods=["POST"])
 def api_text():
-    """Text-input fallback (no mic). Used by the Send button."""
+    """Text-input fallback used by the Send button."""
     body = request.get_json(silent=True) or {}
     text = (body.get("text") or "").strip()
     if not text:
         return jsonify({"error": "empty text"}), 400
 
-    # Use a temporary agent for text-only calls (no persistent socket session)
-    agent = InsurVoiceAgent(api_key=ANTHROPIC_KEY)
+    agent  = InsurVoiceAgent(api_key=ANTHROPIC_KEY)
     result = agent.respond(text)
     reply_text = result["response"]
 
@@ -196,23 +176,23 @@ def api_text():
         audio_b64 = make_tts_mp3(reply_text)
 
     return jsonify({
-        "reply":       reply_text,
-        "intent":      result.get("intent", ""),
-        "escalated":   result.get("should_escalate", False),
+        "reply":           reply_text,
+        "intent":          result.get("intent", ""),
+        "escalated":       result.get("should_escalate", False),
         "handoff_summary": result.get("handoff_summary", ""),
-        "audio_base64": audio_b64,
-        "agent_trace": [],
+        "audio_base64":    audio_b64,
+        "agent_trace":     [],
     })
 
 
 @app.route("/api/reset", methods=["POST"])
 def api_reset():
-    """Reset the agent for the current socket session (New Call button)."""
+    """Reset the agent conversation (New Call button)."""
     sid = request.headers.get("X-Socket-ID", "")
     if sid and sid in sessions:
         sessions[sid]["agent"].reset()
         sessions[sid]["turn_count"] = 0
-        sessions[sid]["call_id"] = str(uuid.uuid4())
+        sessions[sid]["call_id"]    = str(uuid.uuid4())
     return jsonify({"ok": True})
 
 
@@ -224,25 +204,20 @@ def on_connect():
     log.info("Client connected: %s", sid)
 
     sessions[sid] = {
-        "agent":       InsurVoiceAgent(api_key=ANTHROPIC_KEY),
-        "dg_session":  None,
-        "call_id":     str(uuid.uuid4()),
-        "turn_count":  0,
+        "agent":      InsurVoiceAgent(api_key=ANTHROPIC_KEY),
+        "dg_session": None,
+        "call_id":    str(uuid.uuid4()),
+        "turn_count": 0,
     }
 
-    # Tell the browser what's available
     emit("connected", {
         "deepgram_available": bool(DEEPGRAM_KEY),
         "simli_api_key":      SIMLI_API_KEY,
         "simli_face_id":      SIMLI_FACE_ID,
     })
 
-    # Send greeting immediately via agent
-    threading.Thread(
-        target=agent_and_tts,
-        args=(sid, "Hello, please greet the customer."),
-        daemon=True,
-    ).start()
+    # Send greeting in background
+    eventlet.spawn(agent_and_tts, sid, "Hello, please greet the customer.")
 
 
 @socketio.on("disconnect")
@@ -259,7 +234,6 @@ def on_disconnect():
 
 @socketio.on("start_stream")
 def on_start_stream():
-    """Browser starts sending mic audio. Open a Deepgram streaming session."""
     sid = request.sid
     session = sessions.get(sid)
     if not session:
@@ -269,11 +243,8 @@ def on_start_stream():
         if not is_final:
             socketio.emit("partial_transcript", {"text": text}, to=sid)
             return
-        # Final transcript → emit to browser then run agent
         socketio.emit("transcript", {"text": text, "language": language}, to=sid)
-        threading.Thread(
-            target=agent_and_tts, args=(sid, text), daemon=True
-        ).start()
+        eventlet.spawn(agent_and_tts, sid, text)
 
     dg = DeepgramStreamSession(api_key=DEEPGRAM_KEY, on_transcript=on_transcript)
     dg.start()
@@ -292,13 +263,12 @@ def on_stop_stream():
 
 @socketio.on("resume_stream")
 def on_resume_stream():
-    """Re-open Deepgram after the avatar finishes speaking."""
     on_start_stream()
 
 
 @socketio.on("audio_chunk")
 def on_audio_chunk(data):
-    """Raw PCM16 chunk from the browser AudioWorklet → forward to Deepgram."""
+    """Raw PCM16 from browser AudioWorklet → Deepgram."""
     sid = request.sid
     session = sessions.get(sid)
     if not session:
