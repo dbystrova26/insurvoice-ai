@@ -135,18 +135,17 @@ def _run_turn(sid: str, transcript: str, socket_id: str, language: str = "en"):
         _call_meta[sid]["escalated"] = result.get("should_escalate", False)
 
     # ✅ Generate TTS audio
-    audio_url = None
+    audio_base64 = None
     if ELEVENLABS_KEY and result.get("response"):
         tts_result = synthesize_elevenlabs(result["response"], ELEVENLABS_KEY, VOICE_ID)
         if tts_result["success"]:
-            audio_id = str(uuid.uuid4())
-            _audio_cache[audio_id] = tts_result["audio"]  # Store bytes (not base64)
-            audio_url = f"/api/audio/{audio_id}"  # ✅ Send URL to client
-            logger.info(f"[TTS] Generated {audio_id}: {len(tts_result['audio'])} bytes")
+            import base64
+            audio_base64 = base64.b64encode(tts_result["audio"]).decode("utf-8")
+            logger.info(f"[TTS] Generated audio: {len(tts_result['audio'])} bytes")
         else:
             logger.warning(f"[TTS] Failed: {tts_result['error']}")
 
-    # ✅ Emit reply with audio URL (not base64)
+    # ✅ Emit reply with audio_base64 (matches avatar.html)
     socketio.emit("reply", {
         "transcript": transcript,
         "reply": result["response"],
@@ -155,7 +154,7 @@ def _run_turn(sid: str, transcript: str, socket_id: str, language: str = "en"):
         "language": language,
         "escalated": result.get("should_escalate", False),
         "handoff_summary": result.get("handoff_summary"),
-        "audio_url": audio_url,  # ✅ URL, not data
+        "audio_base64": audio_base64,  # ✅ base64 string, matches avatar.html
     }, room=socket_id)
 
     logger.info(f"[Turn] sid={sid[:8]} intent={result.get('intent')} escalated={result.get('should_escalate')}")
@@ -311,13 +310,12 @@ def handle_text():
     result = agent.respond(user_text, language=data.get("language", "en"))
     
     # Generate TTS if requested
-    audio_url = None
+    audio_base64 = None
     if ELEVENLABS_KEY and data.get("tts", True):
         tts_result = synthesize_elevenlabs(result["response"], ELEVENLABS_KEY, VOICE_ID)
         if tts_result["success"]:
-            audio_id = str(uuid.uuid4())
-            _audio_cache[audio_id] = tts_result["audio"]
-            audio_url = f"/api/audio/{audio_id}"
+            import base64
+            audio_base64 = base64.b64encode(tts_result["audio"]).decode("utf-8")
     
     return jsonify({
         "transcript": user_text,
@@ -325,7 +323,7 @@ def handle_text():
         "intent": result.get("intent", ""),
         "escalated": result.get("should_escalate", False),
         "handoff_summary": result.get("handoff_summary"),
-        "audio_url": audio_url,
+        "audio_base64": audio_base64,
     })
 
 
