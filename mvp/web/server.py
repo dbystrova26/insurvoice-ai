@@ -221,7 +221,8 @@ def on_connect():
     })
 
     def _delayed_greeting():
-        time.sleep(4)
+        time.sleep(6)
+        if sid in sessions:  # only greet if still connected
         agent_and_tts(sid, "Hello, please greet the customer.")
 
     threading.Thread(target=_delayed_greeting, daemon=True).start()
