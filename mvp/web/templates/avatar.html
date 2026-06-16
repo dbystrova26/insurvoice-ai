@@ -307,6 +307,23 @@
     }
   }
 
+  // Cleanly close the Simli session so it doesn't linger and hit the
+  // concurrent-session rate limit on the next page load.
+  function closeSimli() {
+    try {
+      if (simliClient) {
+        if (typeof simliClient.close === 'function') simliClient.close();
+        else if (typeof simliClient.stop === 'function') simliClient.stop();
+      }
+    } catch (e) { /* ignore */ }
+    simliClient = null;
+    simliReady = false;
+  }
+
+  // Close the session when the user leaves or reloads the page.
+  window.addEventListener('beforeunload', closeSimli);
+  window.addEventListener('pagehide', closeSimli);
+
   // ── SocketIO ──────────────────────────────────────────────────────────────
   function initSocket() {
     socket = io();
@@ -346,9 +363,14 @@
         setMicState('speaking');
         setStatus('speaking', 'Speaking…');
 
-        // Send to Simli — it handles both lip sync AND audio playback via avatarAudio element
-        // Do NOT also play via Audio() — that causes double audio
-        sendToSimli(d.audio_base64);
+        // If Simli avatar is connected, let it handle lip sync + audio.
+        // Otherwise fall back to plain browser audio so the user still hears the reply.
+        if (simliReady) {
+          sendToSimli(d.audio_base64);
+        } else {
+          const audio = new Audio('data:audio/mpeg;base64,' + d.audio_base64);
+          audio.play().catch(() => {});
+        }
 
         // Estimate speech duration to resume listening after avatar finishes
         // MP3 at ~32kbps: bytes * 8 / 32000 seconds, minimum 1s
