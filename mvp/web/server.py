@@ -1,11 +1,8 @@
 """
 server.py – InsurVoice AI backend
-Eventlet async mode — fixes gevent-websocket recursion error on Render.
-Monkey-patch must happen before all other imports.
+Threading async mode — works with gunicorn sync worker on Render.
+No eventlet or gevent needed.
 """
-
-import eventlet
-eventlet.monkey_patch()  # must be first — before requests, anthropic, etc.
 
 import os
 import uuid
@@ -31,7 +28,7 @@ app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET", "dev-secret")
 socketio = SocketIO(
     app,
     cors_allowed_origins="*",
-    async_mode="eventlet",          # ← eventlet, not gevent
+    async_mode="threading",
     transports=["websocket", "polling"],
     ping_timeout=60,
     ping_interval=25,
@@ -40,12 +37,12 @@ socketio = SocketIO(
 )
 
 # ── Env vars ────────────────────────────────────────────────────────────────
-ANTHROPIC_KEY    = os.environ.get("ANTHROPIC_API_KEY", "")
-DEEPGRAM_KEY     = os.environ.get("DEEPGRAM_API_KEY", "")
-ELEVENLABS_KEY   = os.environ.get("ELEVENLABS_API_KEY", "")
-SIMLI_API_KEY    = os.environ.get("SIMLI_API_KEY", "")
-SIMLI_FACE_ID    = os.environ.get("SIMLI_FACE_ID", "tmp9i8bbq7")
-N8N_WEBHOOK_URL  = os.environ.get("N8N_WEBHOOK_URL", "")
+ANTHROPIC_KEY   = os.environ.get("ANTHROPIC_API_KEY", "")
+DEEPGRAM_KEY    = os.environ.get("DEEPGRAM_API_KEY", "")
+ELEVENLABS_KEY  = os.environ.get("ELEVENLABS_API_KEY", "")
+SIMLI_API_KEY   = os.environ.get("SIMLI_API_KEY", "")
+SIMLI_FACE_ID   = os.environ.get("SIMLI_FACE_ID", "tmp9i8bbq7")
+N8N_WEBHOOK_URL = os.environ.get("N8N_WEBHOOK_URL", "")
 
 # ── Per-socket state ─────────────────────────────────────────────────────────
 sessions: dict[str, dict] = {}
@@ -64,7 +61,7 @@ def make_tts_mp3(text: str) -> str | None:
 
 
 def agent_and_tts(sid: str, text: str):
-    """Run agent + TTS, emit reply to client."""
+    """Run agent + TTS in background thread, emit reply to client."""
     session = sessions.get(sid)
     if not session:
         return
@@ -102,8 +99,10 @@ def agent_and_tts(sid: str, text: str):
     except Exception as e:
         log.error("[%s] agent_and_tts error: %s", sid, e)
         socketio.emit("reply", {
-            "reply": "I'm having a technical issue. Let me connect you to a colleague.",
-            "intent": "error", "escalated": True, "audio_base64": None,
+            "reply":        "I'm having a technical issue. Let me connect you to a colleague.",
+            "intent":       "error",
+            "escalated":    True,
+            "audio_base64": None,
         }, to=sid)
 
 
@@ -132,7 +131,7 @@ def health():
 
 @app.route("/api/simli/session")
 def simli_session():
-    """Browser fetches this to get a Simli session token (keeps API key server-side)."""
+    """Browser fetches this to get a Simli session token."""
     if not SIMLI_API_KEY:
         return jsonify({"error": "SIMLI_API_KEY not configured"}), 503
     try:
@@ -216,8 +215,12 @@ def on_connect():
         "simli_face_id":      SIMLI_FACE_ID,
     })
 
-    # Send greeting in background
-    eventlet.spawn(agent_and_tts, sid, "Hello, please greet the customer.")
+    # Send greeting in background thread
+    threading.Thread(
+        target=agent_and_tts,
+        args=(sid, "Hello, please greet the customer."),
+        daemon=True,
+    ).start()
 
 
 @socketio.on("disconnect")
@@ -244,7 +247,11 @@ def on_start_stream():
             socketio.emit("partial_transcript", {"text": text}, to=sid)
             return
         socketio.emit("transcript", {"text": text, "language": language}, to=sid)
-        eventlet.spawn(agent_and_tts, sid, text)
+        threading.Thread(
+            target=agent_and_tts,
+            args=(sid, text),
+            daemon=True,
+        ).start()
 
     dg = DeepgramStreamSession(api_key=DEEPGRAM_KEY, on_transcript=on_transcript)
     dg.start()
