@@ -211,6 +211,28 @@
   let SIMLI_API_KEY = '';
   let SIMLI_FACE_ID = '';
 
+  // Browsers block audio autoplay until the user interacts with the page.
+  // We queue any greeting audio that arrives before the first click/tap.
+  let audioUnlocked = false;
+  let pendingGreetingAudio = null;
+
+  function unlockAudio() {
+    if (audioUnlocked) return;
+    audioUnlocked = true;
+    // Unmute the Simli avatar audio element
+    const aEl = document.getElementById('avatarAudio');
+    if (aEl) { aEl.muted = false; aEl.play && aEl.play().catch(() => {}); }
+    // Play any greeting that was waiting for a user gesture
+    if (pendingGreetingAudio) {
+      const a = new Audio('data:audio/mpeg;base64,' + pendingGreetingAudio);
+      a.play().catch(() => {});
+      pendingGreetingAudio = null;
+    }
+  }
+  // First interaction anywhere unlocks audio
+  document.addEventListener('click', unlockAudio, { once: false });
+  document.addEventListener('keydown', unlockAudio, { once: false });
+
   // AudioWorklet for mic → PCM16
   const WORKLET = `
     class PcmProcessor extends AudioWorkletProcessor {
@@ -367,6 +389,11 @@
         // Otherwise fall back to plain browser audio so the user still hears the reply.
         if (simliReady) {
           sendToSimli(d.audio_base64);
+        } else if (!audioUnlocked) {
+          // Greeting arrived before any user interaction — queue it.
+          // It will play on the first click/tap (browser autoplay policy).
+          pendingGreetingAudio = d.audio_base64;
+          setStatus('ready', 'Tap anywhere to hear the greeting');
         } else {
           const audio = new Audio('data:audio/mpeg;base64,' + d.audio_base64);
           audio.play().catch(() => {});
@@ -412,6 +439,11 @@
         if (socket && isLive && !isSpeaking) socket.emit('audio_chunk', e.data);
       };
       source.connect(processor);
+      // Connect to a muted destination so the worklet actually runs in all browsers
+      const sink = audioCtx.createGain();
+      sink.gain.value = 0;
+      processor.connect(sink);
+      sink.connect(audioCtx.destination);
       isLive = true;
       socket.emit('start_stream');
       setMicState('hearing');

@@ -295,12 +295,39 @@ def handle_upload():
 @socketio.on("connect")
 def on_connect():
     join_room(request.sid)
+    sid = _sid()
+    socket_id = request.sid
     emit("connected", {
         "deepgram_available": bool(DEEPGRAM_KEY),
         "elevenlabs_available": bool(ELEVENLABS_KEY),
         "simli_api_key": SIMLI_API_KEY,
         "simli_face_id": SIMLI_FACE_ID,
     })
+    # Auto-greeting once the client connects
+    socketio.start_background_task(_send_greeting, sid, socket_id)
+
+
+def _send_greeting(sid: str, socket_id: str):
+    """Send the opening greeting with TTS audio."""
+    greeting = ("Hello, you're speaking with InsurVoice, an AI assistant for "
+                "Allianz Direct. How can I help you today?")
+    audio_b64 = None
+    if ELEVENLABS_KEY:
+        tts = synthesize_elevenlabs(greeting, ELEVENLABS_KEY, VOICE_ID)
+        if tts["success"]:
+            audio_b64 = base64.b64encode(tts["audio"]).decode()
+    socketio.emit("reply", {
+        "transcript": "",
+        "reply": greeting,
+        "intent": "greeting",
+        "route": "orchestrator",
+        "language": "en",
+        "escalated": False,
+        "handoff_summary": None,
+        "agent_trace": [],
+        "compliance": {},
+        "audio_base64": audio_b64,
+    }, room=socket_id)
 
 
 @socketio.on("start_stream")
