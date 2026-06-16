@@ -436,7 +436,8 @@
           sendToSimli(d.audio_base64);
         } else {
           const audio = new Audio('data:audio/mpeg;base64,' + d.audio_base64);
-        audio.play().catch(() => {});
+          audio.play().catch(() => {});
+        }
       }
     } catch (e) { hideThinking(); showErr('Error: ' + e.message); }
   };
