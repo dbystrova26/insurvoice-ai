@@ -11,7 +11,7 @@ Responses are kept short and natural because they will be spoken aloud (TTS).
 import json
 import re
 import anthropic
-from knowledge import retrieve_context
+from rag import retrieve_context
 
 
 SYSTEM_PROMPT_TEMPLATE = """You are InsurVoice, an AI voice agent for Allianz Direct insurance. The customer is speaking to you on a voice call — your response will be read aloud by a text-to-speech engine.
@@ -150,7 +150,7 @@ class InsurVoiceAgent:
 
         try:
             msg = self.client.messages.create(
-                model="claude-opus-4-6",
+                model="claude-sonnet-4-6",
                 max_tokens=300,
                 system=system_prompt,
                 messages=[{"role": "user", "content": user_message}],
@@ -170,9 +170,9 @@ class InsurVoiceAgent:
 
         # Determine route based on intent
         intent = result.get("intent", "general_info")
-        if intent == "file_claim":
+        if intent in {"file_claim", "claim_status"}:
             route = "claims"
-        elif intent == "policy_coverage":
+        elif intent in {"policy_coverage", "policy_renewal", "cancel_policy"}:
             route = "policy"
         elif intent == "billing_query":
             route = "billing"
@@ -218,7 +218,7 @@ class InsurVoiceAgent:
         )
         try:
             msg = self.client.messages.create(
-                model="claude-opus-4-6",
+                model="claude-sonnet-4-6",
                 max_tokens=120,
                 messages=[{
                     "role": "user",

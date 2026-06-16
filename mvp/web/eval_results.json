@@ -1,11 +1,12 @@
 {
-  "timestamp": "2026-06-13T00:11:45.756666",
+  "timestamp": "2026-06-16T23:15:04.839404",
+  "model": "claude-sonnet-4-6",
+  "rag": "pgvector + keyword fallback",
   "summary": {
-    "routing_accuracy_pct": 96.7,
-    "keyword_coverage_pct": 81.1,
-    "compliance_rate_pct": 100.0,
+    "routing_accuracy_pct": 86.7,
+    "keyword_coverage_pct": 85.6,
     "overall_pass_rate_pct": 83.3,
-    "avg_latency_s": 5.93,
+    "avg_latency_s": 4.29,
     "total_cases": 30
   },
   "results": [
@@ -16,20 +17,20 @@
       "route_correct": true,
       "keyword_score": 1.0,
       "compliant": true,
-      "response_length": 406,
-      "latency_s": 8.28,
-      "response_preview": "Hi there, I'm InsurVoice, an AI assistant for Allianz Direct. Filing a claim is straightforward \u2014 you can do it online a"
+      "response_length": 380,
+      "latency_s": 5.8,
+      "response_preview": "Hello, you're speaking with InsurVoice, an AI assistant for Allianz Direct. You can file a claim online at mypolicy.alli"
     },
     {
       "question": "My pipe burst and flooded my flat.",
       "expected_route": "claims",
-      "actual_route": "claims",
-      "route_correct": true,
-      "keyword_score": 1.0,
+      "actual_route": "policy",
+      "route_correct": false,
+      "keyword_score": 0.6666666666666666,
       "compliant": true,
-      "response_length": 406,
-      "latency_s": 6.15,
-      "response_preview": "I'm so sorry to hear that \u2014 I know this is really stressful. First things first: if you haven't already, try to stop the"
+      "response_length": 427,
+      "latency_s": 4.36,
+      "response_preview": "Hello, you're speaking with InsurVoice, an AI assistant for Allianz Direct. I'm sorry to hear that \u2014 a burst pipe is rea"
     },
     {
       "question": "How long will my claim take?",
@@ -38,20 +39,20 @@
       "route_correct": true,
       "keyword_score": 1.0,
       "compliant": true,
-      "response_length": 337,
-      "latency_s": 5.41,
-      "response_preview": "Hi there, I'm InsurVoice, an AI assistant for Allianz Direct. Standard claims are typically processed within 10 to 15 bu"
+      "response_length": 371,
+      "latency_s": 4.62,
+      "response_preview": "Hello, you're speaking with InsurVoice, an AI assistant for Allianz Direct. Standard claims are typically processed with"
     },
     {
       "question": "My claim was rejected. What next?",
       "expected_route": "claims",
-      "actual_route": "claims",
-      "route_correct": true,
+      "actual_route": "policy",
+      "route_correct": false,
       "keyword_score": 1.0,
       "compliant": true,
-      "response_length": 403,
-      "latency_s": 5.26,
-      "response_preview": "I'm sorry to hear that \u2014 I know a rejection can be really frustrating. You should have received a letter explaining the "
+      "response_length": 442,
+      "latency_s": 4.8,
+      "response_preview": "Hello, you're speaking with InsurVoice, an AI assistant for Allianz Direct. If your claim was rejected, you can appeal i"
     },
     {
       "question": "I want to report a theft.",
@@ -60,9 +61,9 @@
       "route_correct": true,
       "keyword_score": 1.0,
       "compliant": true,
-      "response_length": 358,
-      "latency_s": 8.96,
-      "response_preview": "I'm sorry to hear about the theft \u2014 I know this can be really stressful. To get your claim started, I'll need a few thin"
+      "response_length": 400,
+      "latency_s": 4.67,
+      "response_preview": "Hello, you're speaking with InsurVoice, an AI assistant for Allianz Direct. I can help you with that \u2014 first, if you hav"
     },
     {
       "question": "Does my policy cover burst pipes?",
@@ -71,42 +72,42 @@
       "route_correct": true,
       "keyword_score": 1.0,
       "compliant": true,
-      "response_length": 399,
-      "latency_s": 5.19,
-      "response_preview": "Hi, I'm InsurVoice, an AI assistant for Allianz Direct. Yes, burst pipe water damage is covered under your home insuranc"
+      "response_length": 388,
+      "latency_s": 4.41,
+      "response_preview": "Hello, you're speaking with InsurVoice, an AI assistant for Allianz Direct. Yes, burst pipe damage is covered under your"
     },
     {
       "question": "Is theft covered?",
       "expected_route": "policy",
       "actual_route": "policy",
       "route_correct": true,
-      "keyword_score": 0.3333333333333333,
+      "keyword_score": 0.6666666666666666,
       "compliant": true,
-      "response_length": 466,
-      "latency_s": 6.97,
-      "response_preview": "Hi, I'm InsurVoice, an AI assistant for Allianz Direct. Theft is generally covered under standard home insurance policie"
+      "response_length": 382,
+      "latency_s": 3.38,
+      "response_preview": "Hello, you're speaking with InsurVoice, an AI assistant for Allianz Direct. Yes, theft is covered when there's clear evi"
     },
     {
       "question": "What is not covered?",
       "expected_route": "policy",
       "actual_route": "policy",
       "route_correct": true,
-      "keyword_score": 0.3333333333333333,
+      "keyword_score": 1.0,
       "compliant": true,
-      "response_length": 305,
-      "latency_s": 6.54,
-      "response_preview": "Hi, I'm InsurVoice, an AI assistant for Allianz Direct. That's a broad question \u2014 could you help me narrow it down a bit"
+      "response_length": 363,
+      "latency_s": 4.15,
+      "response_preview": "Hello, you're speaking with InsurVoice, an AI assistant for Allianz Direct. Under your home contents insurance, common e"
     },
     {
       "question": "Is flood damage covered?",
       "expected_route": "policy",
       "actual_route": "policy",
       "route_correct": true,
-      "keyword_score": 1.0,
+      "keyword_score": 0.6666666666666666,
       "compliant": true,
-      "response_length": 405,
-      "latency_s": 6.6,
-      "response_preview": "Hi, I'm InsurVoice, an AI assistant for Allianz Direct. Great question \u2014 standard policies do not include flood damage f"
+      "response_length": 490,
+      "latency_s": 4.03,
+      "response_preview": "Hello, you're speaking with InsurVoice, an AI assistant for Allianz Direct. Flood damage is not covered by the standard "
     },
     {
       "question": "Are my electronics covered?",
@@ -115,20 +116,20 @@
       "route_correct": true,
       "keyword_score": 1.0,
       "compliant": true,
-      "response_length": 485,
-      "latency_s": 5.8,
-      "response_preview": "Hi, I'm InsurVoice, an AI assistant for Allianz Direct. Electronics coverage depends on your specific policy. By default"
+      "response_length": 419,
+      "latency_s": 4.2,
+      "response_preview": "Hello, you're speaking with InsurVoice, an AI assistant for Allianz Direct. Yes, your electronics are covered as part of"
     },
     {
       "question": "Why did my premium increase?",
       "expected_route": "billing",
       "actual_route": "billing",
       "route_correct": true,
-      "keyword_score": 0.3333333333333333,
+      "keyword_score": 1.0,
       "compliant": true,
-      "response_length": 244,
-      "latency_s": 10.23,
-      "response_preview": "I completely understand your concern about the premium increase. Let me connect you with one of our specialists who can "
+      "response_length": 414,
+      "latency_s": 4.21,
+      "response_preview": "Hello, you're speaking with InsurVoice, an AI assistant for Allianz Direct. Premiums are reviewed annually at renewal, a"
     },
     {
       "question": "How do I change my payment method?",
@@ -137,9 +138,9 @@
       "route_correct": true,
       "keyword_score": 1.0,
       "compliant": true,
-      "response_length": 325,
-      "latency_s": 4.94,
-      "response_preview": "Hi there, I'm InsurVoice, an AI assistant for Allianz Direct. To change your payment method, you can log into your onlin"
+      "response_length": 314,
+      "latency_s": 4.36,
+      "response_preview": "Hello, you're speaking with InsurVoice, an AI assistant for Allianz Direct. You can update your payment method in your o"
     },
     {
       "question": "I missed a payment. What happens?",
@@ -148,20 +149,20 @@
       "route_correct": true,
       "keyword_score": 1.0,
       "compliant": true,
-      "response_length": 466,
-      "latency_s": 5.89,
-      "response_preview": "Hi, I'm InsurVoice, an AI assistant for Allianz Direct. Thanks for reaching out. If a payment fails, we'll automatically"
+      "response_length": 350,
+      "latency_s": 4.01,
+      "response_preview": "Hello, you're speaking with InsurVoice, an AI assistant for Allianz Direct. If a payment fails, we'll retry within 5 day"
     },
     {
       "question": "Can I pay monthly?",
       "expected_route": "billing",
       "actual_route": "billing",
       "route_correct": true,
-      "keyword_score": 1.0,
+      "keyword_score": 0.3333333333333333,
       "compliant": true,
-      "response_length": 397,
-      "latency_s": 5.85,
-      "response_preview": "Hi there, I'm InsurVoice, an AI assistant for Allianz Direct. Yes, Allianz Direct generally offers monthly payment optio"
+      "response_length": 238,
+      "latency_s": 3.44,
+      "response_preview": "Hello, you're speaking with InsurVoice, an AI assistant for Allianz Direct. I'm afraid I don't have details about monthl"
     },
     {
       "question": "Where can I find my invoice?",
@@ -170,9 +171,9 @@
       "route_correct": true,
       "keyword_score": 1.0,
       "compliant": true,
-      "response_length": 327,
-      "latency_s": 4.39,
-      "response_preview": "Hi there, I'm InsurVoice, an AI assistant for Allianz Direct. Great question! You can find all your invoices and payment"
+      "response_length": 283,
+      "latency_s": 4.36,
+      "response_preview": "Hello, you're speaking with InsurVoice, an AI assistant for Allianz Direct. Your invoices and payment receipts are avail"
     },
     {
       "question": "How does automatic renewal work?",
@@ -181,9 +182,9 @@
       "route_correct": true,
       "keyword_score": 1.0,
       "compliant": true,
-      "response_length": 419,
-      "latency_s": 5.62,
-      "response_preview": "Hi, I'm InsurVoice, an AI assistant for Allianz Direct. Great question! Your policy renews automatically each year unles"
+      "response_length": 349,
+      "latency_s": 4.23,
+      "response_preview": "Hello, you're speaking with InsurVoice, an AI assistant for Allianz Direct. Your policy renews automatically each year, "
     },
     {
       "question": "How do I cancel my policy?",
@@ -192,20 +193,20 @@
       "route_correct": true,
       "keyword_score": 1.0,
       "compliant": true,
-      "response_length": 416,
-      "latency_s": 5.99,
-      "response_preview": "Hi, I'm InsurVoice, an AI assistant for Allianz Direct. To cancel your policy, you can do so at your annual renewal date"
+      "response_length": 387,
+      "latency_s": 4.82,
+      "response_preview": "Hello, you're speaking with InsurVoice, an AI assistant for Allianz Direct. To cancel your policy, you can send a signed"
     },
     {
       "question": "I am moving home.",
       "expected_route": "policy",
-      "actual_route": "policy",
-      "route_correct": true,
-      "keyword_score": 0.6666666666666666,
+      "actual_route": "general",
+      "route_correct": false,
+      "keyword_score": 1.0,
       "compliant": true,
-      "response_length": 357,
-      "latency_s": 8.88,
-      "response_preview": "Thanks for letting us know! It's important to update your policy with your new address before you move, as your premium "
+      "response_length": 368,
+      "latency_s": 4.0,
+      "response_preview": "Hello, you're speaking with InsurVoice, an AI assistant for Allianz Direct. If you're moving home, you'll need to notify"
     },
     {
       "question": "Can I increase my sum insured?",
@@ -214,9 +215,9 @@
       "route_correct": true,
       "keyword_score": 1.0,
       "compliant": true,
-      "response_length": 343,
-      "latency_s": 5.91,
-      "response_preview": "Hi, I'm InsurVoice, an AI assistant for Allianz Direct. Yes, you can absolutely increase your sum insured at any time, n"
+      "response_length": 323,
+      "latency_s": 3.74,
+      "response_preview": "Hello, you're speaking with InsurVoice, an AI assistant for Allianz Direct. Yes, you can increase your sum insured at an"
     },
     {
       "question": "Do family members get covered?",
@@ -225,9 +226,9 @@
       "route_correct": true,
       "keyword_score": 0.6666666666666666,
       "compliant": true,
-      "response_length": 377,
-      "latency_s": 5.02,
-      "response_preview": "Hi, this is InsurVoice, an AI assistant for Allianz Direct. Yes, your contents policy covers all members of your househo"
+      "response_length": 327,
+      "latency_s": 4.28,
+      "response_preview": "Hello, you're speaking with InsurVoice, an AI assistant for Allianz Direct. Great question \u2014 yes, your policy covers all"
     },
     {
       "question": "What are your opening hours?",
@@ -236,20 +237,20 @@
       "route_correct": true,
       "keyword_score": 1.0,
       "compliant": true,
-      "response_length": 306,
-      "latency_s": 4.69,
-      "response_preview": "Great question! Our customer service team is available Monday to Friday from 8am to 8pm, and Saturday from 9am to 5pm. I"
+      "response_length": 264,
+      "latency_s": 3.93,
+      "response_preview": "Hello, you're speaking with InsurVoice, an AI assistant for Allianz Direct. Our customer service team is available Monda"
     },
     {
       "question": "How do I make a complaint?",
       "expected_route": "general",
       "actual_route": "general",
       "route_correct": true,
-      "keyword_score": 0.6666666666666666,
+      "keyword_score": 1.0,
       "compliant": true,
-      "response_length": 373,
-      "latency_s": 5.08,
-      "response_preview": "We take complaints seriously. You can write to our complaints team at beschwerde@allianz-direct.de or send a letter by p"
+      "response_length": 389,
+      "latency_s": 5.04,
+      "response_preview": "Hello, you're speaking with InsurVoice, an AI assistant for Allianz Direct. You can submit a complaint by emailing besch"
     },
     {
       "question": "Where are my policy documents?",
@@ -258,9 +259,9 @@
       "route_correct": true,
       "keyword_score": 1.0,
       "compliant": true,
-      "response_length": 340,
-      "latency_s": 4.57,
-      "response_preview": "Hi there, I'm InsurVoice, an AI assistant for Allianz Direct. Your policy documents, including your policy schedule, ter"
+      "response_length": 357,
+      "latency_s": 4.36,
+      "response_preview": "Hello, you're speaking with InsurVoice, an AI assistant for Allianz Direct. Your policy documents are available in your "
     },
     {
       "question": "How do I log into my portal?",
@@ -269,9 +270,9 @@
       "route_correct": true,
       "keyword_score": 0.6666666666666666,
       "compliant": true,
-      "response_length": 349,
-      "latency_s": 4.5,
-      "response_preview": "Hi, I'm InsurVoice, an AI assistant for Allianz Direct. To access your online portal, just go to mypolicy.allianz-direct"
+      "response_length": 290,
+      "latency_s": 4.06,
+      "response_preview": "Hello, you're speaking with InsurVoice, an AI assistant for Allianz Direct. You can log into your customer portal at myp"
     },
     {
       "question": "Am I speaking to a human?",
@@ -280,9 +281,9 @@
       "route_correct": true,
       "keyword_score": 1.0,
       "compliant": true,
-      "response_length": 249,
-      "latency_s": 5.03,
-      "response_preview": "Great question! No, I'm InsurVoice, an AI assistant for Allianz Direct. I'm not a human, but I can help you with most in"
+      "response_length": 265,
+      "latency_s": 3.71,
+      "response_preview": "Hello, you're speaking with InsurVoice, an AI assistant for Allianz Direct. To answer your question directly \u2014 no, I'm n"
     },
     {
       "question": "What does liability insurance cover?",
@@ -291,9 +292,9 @@
       "route_correct": true,
       "keyword_score": 0.6666666666666666,
       "compliant": true,
-      "response_length": 377,
-      "latency_s": 4.82,
-      "response_preview": "Hi there, I'm InsurVoice, an AI assistant for Allianz Direct. Your personal liability insurance, or Haftpflichtversicher"
+      "response_length": 428,
+      "latency_s": 4.44,
+      "response_preview": "Hello, you're speaking with InsurVoice, an AI assistant for Allianz Direct. Personal liability insurance covers you if y"
     },
     {
       "question": "My dog damaged a neighbour's fence.",
@@ -302,20 +303,20 @@
       "route_correct": true,
       "keyword_score": 1.0,
       "compliant": true,
-      "response_length": 409,
-      "latency_s": 6.01,
-      "response_preview": "That's a great question. Pet liability like dog damage to a neighbour's property would typically fall under your persona"
+      "response_length": 473,
+      "latency_s": 4.62,
+      "response_preview": "Hello, you're speaking with InsurVoice, an AI assistant for Allianz Direct. Good news \u2014 dog damage to a neighbour's prop"
     },
     {
       "question": "I accidentally broke something.",
       "expected_route": "policy",
-      "actual_route": "policy",
-      "route_correct": true,
+      "actual_route": "claims",
+      "route_correct": false,
       "keyword_score": 0.0,
       "compliant": true,
-      "response_length": 274,
-      "latency_s": 4.42,
-      "response_preview": "I'm sorry to hear that! I'm InsurVoice, an AI assistant for Allianz Direct. Could you tell me a bit more about what happ"
+      "response_length": 230,
+      "latency_s": 3.79,
+      "response_preview": "Hello, you're speaking with InsurVoice, an AI assistant for Allianz Direct. I'm sorry to hear that \u2014 could you tell me a"
     },
     {
       "question": "I want to speak to a human.",
@@ -324,20 +325,20 @@
       "route_correct": true,
       "keyword_score": 0.6666666666666666,
       "compliant": true,
-      "response_length": 139,
-      "latency_s": 5.69,
-      "response_preview": "Of course! Let me connect you with one of our team members right away. Please hold for just a moment, and someone will b"
+      "response_length": 204,
+      "latency_s": 3.92,
+      "response_preview": "Hello, you're speaking with InsurVoice, an AI assistant for Allianz Direct. Of course, I'll connect you to a human colle"
     },
     {
       "question": "I am very angry about my claim.",
       "expected_route": "escalation",
-      "actual_route": "claims",
-      "route_correct": false,
-      "keyword_score": 0.3333333333333333,
+      "actual_route": "escalation",
+      "route_correct": true,
+      "keyword_score": 0.6666666666666666,
       "compliant": true,
-      "response_length": 237,
-      "latency_s": 5.29,
-      "response_preview": "I completely understand your frustration, and I'm sorry you're having a difficult experience. I'm here to help however I"
+      "response_length": 261,
+      "latency_s": 4.85,
+      "response_preview": "Hello, you're speaking with InsurVoice, an AI assistant for Allianz Direct. I'm sorry to hear you're having a frustratin"
     }
   ]
 }

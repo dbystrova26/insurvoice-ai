@@ -189,6 +189,16 @@ def create_knowledge_base():
     }
 
     out = DATA_DIR / "knowledge_base.json"
+    # Skip overwriting if a larger knowledge base already exists (e.g. 154-FAQ version)
+    if out.exists():
+        try:
+            existing = json.loads(out.read_text(encoding="utf-8"))
+            existing_count = len(existing.get("faqs", []))
+            if existing_count > len(kb["faqs"]):
+                log(f"Kept existing knowledge base: {existing_count} FAQ entries → {out}")
+                return True
+        except Exception:
+            pass
     with open(out, "w", encoding="utf-8") as f:
         json.dump(kb, f, indent=2, ensure_ascii=False)
     log(f"Knowledge base written: {len(kb['faqs'])} FAQ entries → {out}")

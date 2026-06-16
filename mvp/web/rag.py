@@ -358,18 +358,28 @@ def format_rag_context(results: list[dict]) -> str:
 
 def retrieve_context(query: str) -> str:
     """
-    Main entry point — replaces keyword search in knowledge.py.
-    Returns formatted policy context for the LLM.
+    Main entry point — combines pgvector semantic search with keyword FAQ search.
+    Returns merged context from both sources for richer, more accurate responses.
     """
-    results = semantic_search(query, n_results=4)
-    if not results:
-        # Fallback to keyword search if RAG unavailable
-        try:
-            from knowledge import retrieve_context as keyword_retrieve
-            return keyword_retrieve(query)
-        except Exception:
-            return ""
-    return format_rag_context(results)
+    # Get pgvector results from policy PDFs
+    rag_results = semantic_search(query, n_results=3)
+    rag_context = format_rag_context(rag_results) if rag_results else ""
+
+    # Always also get keyword FAQ matches
+    try:
+        from knowledge import retrieve_context as keyword_retrieve
+        faq_context = keyword_retrieve(query, top_k=2)
+    except Exception:
+        faq_context = ""
+
+    # Combine both — FAQs first (more specific), then policy PDF chunks
+    parts = []
+    if faq_context:
+        parts.append("=== FAQ KNOWLEDGE BASE ===\n" + faq_context)
+    if rag_context:
+        parts.append(rag_context)
+
+    return "\n\n".join(parts) if parts else ""
 
 
 # ── 7. TEST ──────────────────────────────────────────────────────
