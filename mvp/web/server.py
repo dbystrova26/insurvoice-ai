@@ -1,11 +1,12 @@
 """
 server.py – InsurVoice AI backend
 Threading async mode — works with gunicorn sync worker on Render.
-No eventlet or gevent needed.
+4-second greeting delay so Simli is ready before audio plays.
 """
 
 import os
 import uuid
+import time
 import base64
 import logging
 import threading
@@ -215,12 +216,12 @@ def on_connect():
         "simli_face_id":      SIMLI_FACE_ID,
     })
 
-    # Send greeting in background thread
-    threading.Thread(
-        target=agent_and_tts,
-        args=(sid, "Hello, please greet the customer."),
-        daemon=True,
-    ).start()
+    # Delay greeting by 4s so Simli has time to connect and lip-sync works
+    def _delayed_greeting():
+        time.sleep(4)
+        agent_and_tts(sid, "Hello, please greet the customer.")
+
+    threading.Thread(target=_delayed_greeting, daemon=True).start()
 
 
 @socketio.on("disconnect")
