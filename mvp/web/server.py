@@ -1,125 +1,175 @@
 """
-server.py — InsurVoice AI · Flask + SocketIO server
-Feature/simli-avatar branch logic + Render deployment fixes
-"""
+server.py  –  Flask-SocketIO backend for InsurVoice AI avatar
 
-# ✅ CRITICAL: Gevent monkey patch MUST be first (required for Render/gunicorn)
-from gevent import monkey
-monkey.patch_all()
+Key fixes applied:
+1. ElevenLabs PCM audio is piped to Simli via HTTP POST (not base64 to browser)
+2. WebSocket transport enabled (Render supports it)
+3. Simli session lifecycle managed server-side
+4. Deepgram configured for webm/opus (browser default)
+"""
 
 import os
 import base64
-import uuid
-import time
-import requests as req
+import threading
+import requests
 import logging
-from flask import Flask, request, jsonify, render_template, session
-from flask_socketio import SocketIO, emit, join_room
-from dotenv import load_dotenv
 
-from agents import Orchestrator
-from voice import synthesize_elevenlabs, DEFAULT_VOICE_ID
-from stream import DeepgramStreamSession, transcribe_streaming_chunk
-from n8n_integration import fire_n8n_webhook
+from flask import Flask, render_template, request
+from flask_socketio import SocketIO, emit
 
-load_dotenv()
+from voice import synthesize_elevenlabs_pcm   # see voice.py
+from stt import transcribe_deepgram           # see stt.py
+from llm import get_llm_response              # your existing LLM logic
 
-logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger(__name__)
 
 app = Flask(__name__)
-app.secret_key = os.getenv("FLASK_SECRET", "insurvoice-dev-change-in-prod")
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret")
 
-# ✅ gevent async_mode + polling only (Render free tier has no WebSocket support)
+# ── Fix #2: enable WebSocket – Render DOES support it ──────────────────────
 socketio = SocketIO(
     app,
     cors_allowed_origins="*",
     async_mode="gevent",
-    transports=["polling"],
+    transports=["websocket", "polling"],   # websocket first
     ping_timeout=60,
     ping_interval=25,
-    max_http_buffer_size=10_000_000,  # allow larger audio payloads
+    logger=False,
+    engineio_logger=False,
 )
 
-ANTHROPIC_KEY  = os.getenv("ANTHROPIC_API_KEY", "")
-OPENAI_KEY     = os.getenv("OPENAI_API_KEY", "")
-ELEVENLABS_KEY = os.getenv("ELEVENLABS_API_KEY", "")
-DEEPGRAM_KEY   = os.getenv("DEEPGRAM_API_KEY", "")
-VOICE_ID       = os.getenv("ELEVENLABS_VOICE_ID", DEFAULT_VOICE_ID)
-SIMLI_API_KEY  = os.getenv("SIMLI_API_KEY", "")
-SIMLI_FACE_ID  = os.getenv("SIMLI_FACE_ID", "")
+SIMLI_API_KEY   = os.environ["SIMLI_API_KEY"]
+SIMLI_FACE_ID   = os.environ.get("SIMLI_FACE_ID", "tmp9i8bbq7")
+ELEVENLABS_KEY  = os.environ["ELEVENLABS_API_KEY"]
+ELEVENLABS_VOICE = os.environ.get("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
 
-_agents: dict[str, Orchestrator] = {}
-_streams: dict[str, DeepgramStreamSession] = {}
-_last_turn: dict[str, tuple] = {}
-_call_meta: dict[str, dict] = {}
+# Per-session Simli state  { sid: {"simli_session_id": str, "simli_token": str} }
+sessions: dict[str, dict] = {}
 
 
-def _sid() -> str:
-    if "sid" not in session:
-        session["sid"] = uuid.uuid4().hex
-    return session["sid"]
+# ── Simli session helpers ───────────────────────────────────────────────────
+
+def create_simli_session(face_id: str) -> dict:
+    """Create a new Simli session and return session_id + token."""
+    resp = requests.post(
+        "https://api.simli.ai/startAudioToVideoSession",
+        json={
+            "faceId": face_id,
+            "isJPG": False,
+            "apiKey": SIMLI_API_KEY,
+            "syncAudio": True,
+        },
+        timeout=15,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    log.info("Simli session created: %s", data.get("session_id"))
+    return data   # keys: session_id, token (and maybe livekit_url)
 
 
-def _get_agent(sid: str) -> Orchestrator:
-    if sid not in _agents:
-        _agents[sid] = Orchestrator(ANTHROPIC_KEY)
-        _call_meta[sid] = {
-            "call_id": uuid.uuid4().hex,
-            "start_time": time.time(),
-            "turns": 0,
-            "escalated": False,
+def send_pcm_to_simli(session_id: str, token: str, pcm_bytes: bytes) -> None:
+    """
+    POST raw PCM-16 audio to Simli's audio-ingestion endpoint.
+    Simli expects: 16 kHz, mono, 16-bit little-endian PCM.
+    Docs: https://docs.simli.ai/api-reference/send-audio
+    """
+    try:
+        resp = requests.post(
+            "https://api.simli.ai/sendAudio",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "audio/pcm",
+            },
+            params={"sessionId": session_id},
+            data=pcm_bytes,
+            timeout=30,
+        )
+        if resp.status_code != 200:
+            log.error("Simli sendAudio error %s: %s", resp.status_code, resp.text[:200])
+        else:
+            log.info("Sent %d PCM bytes to Simli session %s", len(pcm_bytes), session_id)
+    except Exception as exc:
+        log.error("send_pcm_to_simli failed: %s", exc)
+
+
+# ── Socket events ───────────────────────────────────────────────────────────
+
+@socketio.on("connect")
+def on_connect():
+    sid = request.sid
+    log.info("Client connected: %s", sid)
+    try:
+        simli = create_simli_session(SIMLI_FACE_ID)
+        sessions[sid] = {
+            "simli_session_id": simli["session_id"],
+            "simli_token":      simli["token"],
         }
-    return _agents[sid]
+        # Send the LiveKit credentials to the browser so the
+        # SimliClient JS can connect to the video/audio room.
+        emit("simli_session", {
+            "session_id":  simli["session_id"],
+            "token":       simli["token"],
+            # some Simli responses include these directly:
+            "livekit_url": simli.get("livekit_url", ""),
+            "livekit_token": simli.get("livekit_token", ""),
+        })
+    except Exception as exc:
+        log.error("Failed to create Simli session for %s: %s", sid, exc)
+        emit("error", {"message": "Avatar session could not be started."})
 
 
-def _run_turn(sid: str, transcript: str, socket_id: str, language: str = "en"):
-    transcript = transcript.strip()
-    if not transcript or len(transcript) < 4:
+@socketio.on("disconnect")
+def on_disconnect():
+    sid = request.sid
+    sessions.pop(sid, None)
+    log.info("Client disconnected: %s", sid)
+
+
+@socketio.on("user_audio")
+def on_user_audio(data: dict):
+    """
+    Browser sends:  { "audio": "<base64 webm/opus chunk>" }
+    We transcribe → LLM → TTS (PCM) → Simli.
+    """
+    sid = request.sid
+    session = sessions.get(sid)
+    if not session:
+        emit("error", {"message": "No avatar session. Please reconnect."})
         return
-    if transcript.lower() in {"the", "a", "uh", "um", "hmm", "oh", "ah"}:
+
+    raw_audio = base64.b64decode(data["audio"])
+
+    # 1. Transcribe (Deepgram, webm/opus – see stt.py)
+    transcript = transcribe_deepgram(raw_audio)
+    if not transcript:
         return
 
-    now = time.time()
-    last_text, last_time = _last_turn.get(sid, ("", 0))
-    if (now - last_time) < 4.0:
-        if transcript == last_text:
-            return
-        if transcript.lower() in last_text.lower() or last_text.lower() in transcript.lower():
-            return
-    _last_turn[sid] = (transcript, now)
+    log.info("[%s] User said: %s", sid, transcript)
+    emit("transcript", {"text": transcript, "role": "user"})
 
-    socketio.emit("transcript", {"text": transcript, "language": language}, room=socket_id)
+    # 2. LLM response
+    reply_text = get_llm_response(transcript)
+    log.info("[%s] LLM reply: %s", sid, reply_text[:80])
+    emit("transcript", {"text": reply_text, "role": "assistant"})
 
-    agent = _get_agent(sid)
-    result = agent.respond(transcript, language=language)
+    # 3. TTS → PCM → Simli   (in a thread so we don't block the event loop)
+    def _tts_and_send():
+        try:
+            pcm_bytes = synthesize_elevenlabs_pcm(reply_text)
+            send_pcm_to_simli(
+                session["simli_session_id"],
+                session["simli_token"],
+                pcm_bytes,
+            )
+        except Exception as exc:
+            log.error("TTS/Simli pipeline error for %s: %s", sid, exc)
+            socketio.emit("error", {"message": "Audio generation failed."}, to=sid)
 
-    # Track metadata for n8n
-    if sid in _call_meta:
-        _call_meta[sid]["turns"] += 1
-        _call_meta[sid]["escalated"] = result.get("should_escalate", False)
-
-    audio_b64 = None
-    if ELEVENLABS_KEY:
-        tts = synthesize_elevenlabs(result["response"], ELEVENLABS_KEY, VOICE_ID)
-        if tts["success"]:
-            audio_b64 = base64.b64encode(tts["audio"]).decode()
-            logger.info(f"[TTS] Generated {len(tts['audio'])} bytes")
-
-    socketio.emit("reply", {
-        "transcript": transcript,
-        "reply": result["response"],
-        "intent": result.get("intent", ""),
-        "route": result.get("route", ""),
-        "language": language,
-        "escalated": result.get("should_escalate", False),
-        "handoff_summary": result.get("handoff_summary"),
-        "agent_trace": result.get("agent_trace", []),
-        "compliance": result.get("compliance", {}),
-        "audio_base64": audio_b64,
-    }, room=socket_id)
+    threading.Thread(target=_tts_and_send, daemon=True).start()
 
 
-# ── HTTP Routes ─────────────────────────────────────────────────────────────
+# ── Routes ──────────────────────────────────────────────────────────────────
 
 @app.route("/")
 def index():
@@ -128,301 +178,9 @@ def index():
 
 @app.route("/avatar")
 def avatar():
-    # Inject Simli credentials so avatar.html can use them
-    return render_template(
-        "avatar.html",
-        simli_api_key=SIMLI_API_KEY,
-        simli_face_id=SIMLI_FACE_ID,
-    )
-
-
-@app.route("/api/health")
-def health():
-    return jsonify({
-        "status": "ok",
-        "anthropic": bool(ANTHROPIC_KEY),
-        "deepgram": bool(DEEPGRAM_KEY),
-        "elevenlabs": bool(ELEVENLABS_KEY),
-        "simli": bool(SIMLI_API_KEY and SIMLI_FACE_ID),
-    })
-
-
-@app.route("/api/reset", methods=["POST"])
-def reset():
-    sid = _sid()
-    if sid in _agents:
-        _agents[sid].reset()
-    if sid in _streams:
-        _streams[sid].stop()
-        del _streams[sid]
-    _last_turn.pop(sid, None)
-    return jsonify({"status": "reset"})
-
-
-@app.route("/api/simli/session")
-def simli_session():
-    if not SIMLI_API_KEY or not SIMLI_FACE_ID:
-        return jsonify({"error": "Simli keys not configured"}), 500
-    try:
-        # Fetch ICE servers from Simli
-        ice_servers = None
-        try:
-            ice_resp = req.post(
-                "https://api.simli.ai/getIceServers",
-                headers={"Content-Type": "application/json"},
-                json={"apiKey": SIMLI_API_KEY},
-                timeout=10,
-            )
-            if ice_resp.status_code == 200:
-                ice_servers = ice_resp.json()
-        except Exception as e:
-            logger.warning(f"[Simli] ICE server fetch failed: {e}")
-
-        # Get session token via compose/token (primary)
-        sess_resp = req.post(
-            "https://api.simli.ai/compose/token",
-            headers={"Content-Type": "application/json"},
-            json={
-                "faceId": SIMLI_FACE_ID,
-                "apiKey": SIMLI_API_KEY,
-                "handleSilence": True,
-                "maxSessionLength": 600,
-                "maxIdleTime": 180,
-            },
-            timeout=10,
-        )
-
-        # Fallback to legacy endpoint if compose/token fails
-        if sess_resp.status_code != 200:
-            logger.warning(f"[Simli] compose/token failed ({sess_resp.status_code}), trying legacy")
-            sess_resp = req.post(
-                "https://api.simli.ai/startAudioToVideoSession",
-                headers={"Content-Type": "application/json"},
-                json={
-                    "faceId": SIMLI_FACE_ID,
-                    "isJPG": False,
-                    "apiKey": SIMLI_API_KEY,
-                    "handleSilence": True,
-                    "maxSessionLength": 600,
-                    "maxIdleTime": 180,
-                },
-                timeout=10,
-            )
-
-        if sess_resp.status_code != 200:
-            logger.error(f"[Simli] Session error: {sess_resp.status_code} {sess_resp.text[:100]}")
-            return jsonify({"error": f"Simli error: {sess_resp.text[:100]}"}), 502
-
-        data = sess_resp.json()
-        session_token = data.get("session_token") or data.get("sessionToken")
-        logger.info("[Simli] Session token obtained")
-
-        return jsonify({
-            "session_token": session_token,
-            "ice_servers": ice_servers,
-        })
-
-    except Exception as e:
-        logger.error(f"[Simli] Exception: {e}")
-        return jsonify({"error": str(e)[:100]}), 500
-
-
-@app.route("/api/text", methods=["POST"])
-def handle_text():
-    if not ANTHROPIC_KEY:
-        return jsonify({"error": "Missing ANTHROPIC_API_KEY"}), 500
-    data = request.get_json(force=True)
-    user_text = (data.get("text") or "").strip()
-    if not user_text:
-        return jsonify({"error": "Empty message"}), 400
-    agent = _get_agent(_sid())
-    result = agent.respond(user_text)
-    audio_b64 = None
-    if ELEVENLABS_KEY and data.get("tts", True):
-        tts = synthesize_elevenlabs(result["response"], ELEVENLABS_KEY, VOICE_ID)
-        if tts["success"]:
-            audio_b64 = base64.b64encode(tts["audio"]).decode()
-    return jsonify({
-        "transcript": user_text,
-        "reply": result["response"],
-        "intent": result.get("intent", ""),
-        "route": result.get("route", ""),
-        "escalated": result.get("should_escalate", False),
-        "handoff_summary": result.get("handoff_summary"),
-        "agent_trace": result.get("agent_trace", []),
-        "compliance": result.get("compliance", {}),
-        "audio_base64": audio_b64,
-    })
-
-
-@app.route("/api/upload", methods=["POST"])
-def handle_upload():
-    if "audio" not in request.files:
-        return jsonify({"error": "No audio file"}), 400
-    audio_bytes = request.files["audio"].read()
-    filename = request.files["audio"].filename or "upload.webm"
-    if DEEPGRAM_KEY:
-        stt = transcribe_streaming_chunk(audio_bytes, DEEPGRAM_KEY)
-    elif OPENAI_KEY:
-        from voice import transcribe_whisper
-        stt = transcribe_whisper(audio_bytes, OPENAI_KEY, filename)
-    else:
-        return jsonify({"error": "No STT key configured"}), 500
-    if not stt["success"]:
-        return jsonify({"error": stt["error"]}), 502
-    agent = _get_agent(_sid())
-    lang = stt.get("language", "en")
-    result = agent.respond(stt["text"], language=lang)
-    audio_b64 = None
-    if ELEVENLABS_KEY:
-        tts = synthesize_elevenlabs(result["response"], ELEVENLABS_KEY, VOICE_ID)
-        if tts["success"]:
-            audio_b64 = base64.b64encode(tts["audio"]).decode()
-    return jsonify({
-        "transcript": stt["text"],
-        "reply": result["response"],
-        "intent": result.get("intent", ""),
-        "route": result.get("route", ""),
-        "escalated": result.get("should_escalate", False),
-        "handoff_summary": result.get("handoff_summary"),
-        "agent_trace": result.get("agent_trace", []),
-        "compliance": result.get("compliance", {}),
-        "audio_base64": audio_b64,
-    })
-
-
-# ── SocketIO Events ─────────────────────────────────────────────────────────
-
-@socketio.on("connect")
-def on_connect():
-    join_room(request.sid)
-    sid = _sid()
-    socket_id = request.sid
-    emit("connected", {
-        "deepgram_available": bool(DEEPGRAM_KEY),
-        "elevenlabs_available": bool(ELEVENLABS_KEY),
-        "simli_api_key": SIMLI_API_KEY,
-        "simli_face_id": SIMLI_FACE_ID,
-    })
-    # Auto-greeting once the client connects
-    socketio.start_background_task(_send_greeting, sid, socket_id)
-
-
-def _send_greeting(sid: str, socket_id: str):
-    """Send the opening greeting with TTS audio."""
-    greeting = ("Hello, you're speaking with InsurVoice, an AI assistant for "
-                "Allianz Direct. How can I help you today?")
-    audio_b64 = None
-    if ELEVENLABS_KEY:
-        tts = synthesize_elevenlabs(greeting, ELEVENLABS_KEY, VOICE_ID)
-        if tts["success"]:
-            audio_b64 = base64.b64encode(tts["audio"]).decode()
-    socketio.emit("reply", {
-        "transcript": "",
-        "reply": greeting,
-        "intent": "greeting",
-        "route": "orchestrator",
-        "language": "en",
-        "escalated": False,
-        "handoff_summary": None,
-        "agent_trace": [],
-        "compliance": {},
-        "audio_base64": audio_b64,
-    }, room=socket_id)
-
-
-@socketio.on("start_stream")
-def on_start_stream():
-    if not DEEPGRAM_KEY:
-        emit("stream_error", {"error": "No DEEPGRAM_API_KEY on server"})
-        return
-    socket_id = request.sid
-    sid = _sid()
-    if sid in _streams:
-        _streams[sid].stop()
-
-    def on_transcript(text: str, is_final: bool, language: str = "en"):
-        if is_final:
-            # ✅ Use socketio.start_background_task (gevent-safe, not threading.Thread)
-            socketio.start_background_task(_run_turn, sid, text, socket_id, language)
-        else:
-            socketio.emit("partial_transcript", {"text": text}, room=socket_id)
-
-    stream = DeepgramStreamSession(DEEPGRAM_KEY, on_transcript)
-    stream.start()
-    _streams[sid] = stream
-    emit("stream_ready", {"status": "listening"})
-
-
-@socketio.on("audio_chunk")
-def on_audio_chunk(data):
-    sid = _sid()
-    if sid in _streams:
-        chunk = data if isinstance(data, bytes) else bytes(data)
-        _streams[sid].send_audio(chunk)
-
-
-@socketio.on("resume_stream")
-def on_resume_stream():
-    sid = _sid()
-    if sid in _streams and _streams[sid].is_alive():
-        return
-    if not DEEPGRAM_KEY:
-        return
-    socket_id = request.sid
-
-    def on_transcript(text: str, is_final: bool, language: str = "en"):
-        if is_final:
-            socketio.start_background_task(_run_turn, sid, text, socket_id, language)
-        else:
-            socketio.emit("partial_transcript", {"text": text}, room=socket_id)
-
-    stream = DeepgramStreamSession(DEEPGRAM_KEY, on_transcript)
-    stream.start()
-    _streams[sid] = stream
-
-
-@socketio.on("stop_stream")
-def on_stop_stream():
-    sid = _sid()
-    if sid in _streams:
-        _streams[sid].stop()
-        del _streams[sid]
-
-
-@socketio.on("disconnect")
-def on_disconnect():
-    sid = session.get("sid")
-    if not sid:
-        return
-    if sid in _streams:
-        _streams[sid].stop()
-        del _streams[sid]
-
-    # Fire n8n webhook on disconnect
-    if sid in _call_meta:
-        meta = _call_meta[sid]
-        fire_n8n_webhook(
-            call_id=meta["call_id"],
-            intent="general",
-            route="general",
-            language="en",
-            turn_count=meta["turns"],
-            resolved=not meta["escalated"],
-            escalated=meta["escalated"],
-            handoff_summary="",
-            compliance_passed=True,
-            conversation_history=[],
-            duration_seconds=int(time.time() - meta["start_time"]),
-        )
-        del _call_meta[sid]
-
-    if sid in _agents:
-        del _agents[sid]
+    return render_template("avatar.html")
 
 
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 5000))
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
-    logger.info(f"Starting InsurVoice AI on port {port}")
-    socketio.run(app, host="0.0.0.0", port=port, debug=False, log_output=True)
+    port = int(os.environ.get("PORT", 5000))
+    socketio.run(app, host="0.0.0.0", port=port, debug=False)

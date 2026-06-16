@@ -1,141 +1,113 @@
 """
-voice.py
---------
-Voice processing for InsurVoice AI.
+voice.py  –  ElevenLabs TTS producing PCM-16 audio for Simli
 
-Speech-to-text:  OpenAI Whisper API (whisper-1)
-Text-to-speech:  ElevenLabs API
-
-Both have free/cheap tiers. Keys are read from environment or passed in.
-
-Design note: this module is channel-agnostic. The same agent logic (agent.py)
-works whether input arrives as text, microphone audio, or an uploaded file.
-The voice layer is purely an input/output wrapper.
+Fix #3: output_format changed from audio/mpeg → pcm_16000
+Simli requires: 16 kHz, mono, 16-bit little-endian PCM.
 """
 
-import io
 import os
 import requests
+import logging
+
+log = logging.getLogger(__name__)
+
+ELEVENLABS_KEY   = os.environ["ELEVENLABS_API_KEY"]
+ELEVENLABS_VOICE = os.environ.get("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
+ELEVENLABS_MODEL = os.environ.get("ELEVENLABS_MODEL", "eleven_turbo_v2_5")
+
+# ElevenLabs PCM output formats understood by Simli
+# pcm_16000  = 16 kHz mono 16-bit LE  ← use this
+# pcm_22050  = 22 kHz mono 16-bit LE  (also acceptable)
+PCM_FORMAT = "pcm_16000"
 
 
-# ── Speech-to-Text: OpenAI Whisper ───────────────────────────────────────────
-
-def transcribe_whisper(audio_bytes: bytes, api_key: str, filename: str = "audio.wav") -> dict:
+def synthesize_elevenlabs_pcm(text: str) -> bytes:
     """
-    Transcribes audio to text using OpenAI's Whisper API.
-
-    Args:
-        audio_bytes: raw audio file bytes (wav, mp3, m4a, webm all accepted)
-        api_key: OpenAI API key
-        filename: hint for the file type (extension matters to the API)
-
-    Returns:
-        {"success": bool, "text": str, "error": str|None}
+    Call ElevenLabs TTS and return raw PCM bytes (no WAV header).
+    Suitable for direct POST to Simli's /sendAudio endpoint.
     """
-    if not api_key:
-        return {"success": False, "text": "", "error": "No OpenAI API key provided"}
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE}"
 
-    if not audio_bytes or len(audio_bytes) < 100:
-        return {"success": False, "text": "", "error": "Audio is empty or too short"}
+    headers = {
+        "xi-api-key": ELEVENLABS_KEY,
+        "Content-Type": "application/json",
+        # Fix: request PCM, not MP3
+        "Accept": "audio/pcm",
+    }
 
-    try:
-        resp = requests.post(
-            "https://api.openai.com/v1/audio/transcriptions",
-            headers={"Authorization": f"Bearer {api_key}"},
-            files={"file": (filename, io.BytesIO(audio_bytes), "audio/wav")},
-            data={"model": "whisper-1", "language": "en"},
-            timeout=60,
+    payload = {
+        "text": text,
+        "model_id": ELEVENLABS_MODEL,
+        "output_format": PCM_FORMAT,   # ← key fix
+        "voice_settings": {
+            "stability": 0.5,
+            "similarity_boost": 0.75,
+        },
+    }
+
+    resp = requests.post(url, json=payload, headers=headers, timeout=30)
+
+    if resp.status_code != 200:
+        log.error(
+            "ElevenLabs error %s: %s",
+            resp.status_code,
+            resp.text[:300],
         )
-        if resp.status_code == 200:
-            text = resp.json().get("text", "").strip()
-            if not text:
-                return {"success": False, "text": "", "error": "Transcription was empty — try speaking more clearly"}
-            return {"success": True, "text": text, "error": None}
-        elif resp.status_code == 401:
-            return {"success": False, "text": "", "error": "Invalid OpenAI API key"}
-        else:
-            return {"success": False, "text": "", "error": f"Whisper API error {resp.status_code}: {resp.text[:120]}"}
-    except requests.Timeout:
-        return {"success": False, "text": "", "error": "Whisper request timed out"}
-    except Exception as e:
-        return {"success": False, "text": "", "error": f"Transcription failed: {str(e)[:120]}"}
+        raise RuntimeError(f"ElevenLabs TTS failed: {resp.status_code}")
+
+    pcm_bytes = resp.content
+    log.info(
+        "ElevenLabs returned %d PCM bytes (format=%s)",
+        len(pcm_bytes),
+        PCM_FORMAT,
+    )
+    return pcm_bytes
 
 
-# ── Text-to-Speech: ElevenLabs ────────────────────────────────────────────────
+# ── Streaming variant (optional – faster first-packet latency) ──────────────
 
-# Default voice: "Rachel" — a clear, professional female voice in ElevenLabs' free tier.
-# Voice IDs are public; users can swap for any voice in their account.
-DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"  # Rachel
-
-
-def synthesize_elevenlabs(text: str, api_key: str,
-                          voice_id: str = DEFAULT_VOICE_ID) -> dict:
+def synthesize_elevenlabs_pcm_stream(text: str):
     """
-    Converts text to speech using ElevenLabs API.
+    Generator that yields PCM chunks as they arrive from ElevenLabs.
+    Use this if you want to start sending audio to Simli before
+    ElevenLabs has finished generating the full response.
 
-    Args:
-        text: text to speak (keep under ~2500 chars for free tier)
-        api_key: ElevenLabs API key
-        voice_id: ElevenLabs voice ID
-
-    Returns:
-        {"success": bool, "audio": bytes|None, "error": str|None}
+    Usage:
+        for chunk in synthesize_elevenlabs_pcm_stream(text):
+            send_pcm_to_simli(session_id, token, chunk)
     """
-    if not api_key:
-        return {"success": False, "audio": None, "error": "No ElevenLabs API key provided"}
+    url = (
+        f"https://api.elevenlabs.io/v1/text-to-speech"
+        f"/{ELEVENLABS_VOICE}/stream"
+    )
 
-    if not text or not text.strip():
-        return {"success": False, "audio": None, "error": "No text to synthesize"}
+    headers = {
+        "xi-api-key": ELEVENLABS_KEY,
+        "Content-Type": "application/json",
+        "Accept": "audio/pcm",
+    }
 
-    # Trim to protect the free-tier character budget
-    text = text.strip()[:2500]
+    payload = {
+        "text": text,
+        "model_id": ELEVENLABS_MODEL,
+        "output_format": PCM_FORMAT,
+        "voice_settings": {
+            "stability": 0.5,
+            "similarity_boost": 0.75,
+        },
+    }
 
-    try:
-        resp = requests.post(
-            f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
-            headers={
-                "xi-api-key": api_key,
-                "Content-Type": "application/json",
-                "Accept": "audio/mpeg",
-            },
-            json={
-                "text": text,
-                "model_id": "eleven_turbo_v2_5",   # fast, low-latency, multilingual
-                "voice_settings": {
-                    "stability": 0.5,
-                    "similarity_boost": 0.75,
-                    "style": 0.0,
-                    "use_speaker_boost": True,
-                },
-            },
-            timeout=45,
-        )
-        if resp.status_code == 200:
-            return {"success": True, "audio": resp.content, "error": None}
-        elif resp.status_code == 401:
-            return {"success": False, "audio": None, "error": "Invalid ElevenLabs API key"}
-        elif resp.status_code == 429:
-            return {"success": False, "audio": None, "error": "ElevenLabs rate limit / quota exceeded"}
-        else:
-            return {"success": False, "audio": None, "error": f"ElevenLabs error {resp.status_code}: {resp.text[:120]}"}
-    except requests.Timeout:
-        return {"success": False, "audio": None, "error": "ElevenLabs request timed out"}
-    except Exception as e:
-        return {"success": False, "audio": None, "error": f"Synthesis failed: {str(e)[:120]}"}
-
-
-def list_elevenlabs_voices(api_key: str) -> list:
-    """Returns available voices for the account, or a sensible default list."""
-    if not api_key:
-        return [{"id": DEFAULT_VOICE_ID, "name": "Rachel (default)"}]
-    try:
-        resp = requests.get(
-            "https://api.elevenlabs.io/v1/voices",
-            headers={"xi-api-key": api_key}, timeout=15,
-        )
-        if resp.status_code == 200:
-            voices = resp.json().get("voices", [])
-            return [{"id": v["voice_id"], "name": v["name"]} for v in voices[:10]]
-    except Exception:
-        pass
-    return [{"id": DEFAULT_VOICE_ID, "name": "Rachel (default)"}]
+    with requests.post(
+        url,
+        json=payload,
+        headers=headers,
+        stream=True,
+        timeout=60,
+    ) as resp:
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"ElevenLabs stream failed: {resp.status_code} {resp.text[:200]}"
+            )
+        for chunk in resp.iter_content(chunk_size=4096):
+            if chunk:
+                yield chunk
