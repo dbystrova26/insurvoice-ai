@@ -343,7 +343,7 @@
         if (simliReady) sendToSimli(d.audio_base64);
 
         const bytes = atob(d.audio_base64).length;
-        const estimatedMs = Math.max(1000, (bytes * 8 / 32000) * 1000);
+        const estimatedMs = Math.max(500, (bytes * 8 / 64000) * 1000);
         setTimeout(() => {
           isSpeaking = false;
           if (isLive && !d.escalated) {
