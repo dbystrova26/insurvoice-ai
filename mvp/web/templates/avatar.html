@@ -41,10 +41,8 @@
   .dot.speaking{background:var(--warn);box-shadow:0 0 8px var(--warn)}
   @keyframes pdot{0%,100%{opacity:1}50%{opacity:.4}}
 
-  /* Main layout: avatar left, conversation right */
   .main{display:grid;grid-template-columns:400px 1fr;gap:28px;align-items:start}
 
-  /* Avatar panel */
   .avatar-panel{display:flex;flex-direction:column;align-items:center;gap:16px}
   .avatar-frame{
     width:380px;height:380px;border-radius:24px;overflow:hidden;
@@ -56,7 +54,6 @@
   .avatar-placeholder{display:flex;flex-direction:column;align-items:center;gap:12px;color:var(--muted)}
   .avatar-placeholder svg{width:64px;height:64px;fill:var(--muted);opacity:.4}
 
-  /* Mic button below avatar */
   .mic-row{display:flex;align-items:center;gap:14px}
   .mic-btn{
     width:64px;height:64px;border-radius:50%;border:none;cursor:pointer;
@@ -72,13 +69,11 @@
     70%{box-shadow:0 0 0 22px rgba(74,222,128,0)}100%{box-shadow:0 0 0 0 rgba(74,222,128,0)}}
   .mic-label{font-size:13px;font-weight:600;color:var(--mist)}
 
-  /* Hearing bar */
   .hearing-bar{background:rgba(74,222,128,.07);border:1px solid rgba(74,222,128,.2);
     border-radius:8px;padding:8px 14px;font-size:13px;color:#4ADE80;
     width:380px;display:none;text-align:center}
   .hearing-bar.active{display:block}
 
-  /* Conversation panel */
   .convo-panel{display:flex;flex-direction:column;gap:12px}
   .convo-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
   .convo-title{font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}
@@ -86,8 +81,7 @@
     font-family:inherit;font-size:12px;padding:5px 12px;border-radius:7px;cursor:pointer;transition:all .2s}
   .reset-btn:hover{border-color:var(--violet);color:var(--mist)}
 
-  .convo{display:flex;flex-direction:column;gap:10px;max-height:420px;overflow-y:auto;
-    padding-right:4px}
+  .convo{display:flex;flex-direction:column;gap:10px;max-height:420px;overflow-y:auto;padding-right:4px}
   .convo::-webkit-scrollbar{width:4px}
   .convo::-webkit-scrollbar-thumb{background:var(--line);border-radius:4px}
 
@@ -109,7 +103,6 @@
   .blip:nth-child(2){animation-delay:.2s}.blip:nth-child(3){animation-delay:.4s}
   @keyframes blink{0%,60%,100%{opacity:.3}30%{opacity:1}}
 
-  /* Text input */
   .text-row{display:flex;gap:8px;margin-top:8px}
   .text-row input{flex:1;background:var(--panel);border:1px solid var(--line);
     border-radius:9px;padding:10px 14px;color:var(--mist);font-family:inherit;
@@ -119,7 +112,6 @@
     font-weight:600;padding:0 18px;border-radius:9px;cursor:pointer;transition:background .2s}
   .send-btn:hover{background:var(--vbright)}
 
-  /* Compliance pills */
   .pills{display:flex;flex-wrap:wrap;gap:7px;margin-top:20px}
   .pill{background:var(--panel);border:1px solid var(--line);border-radius:16px;
     padding:4px 11px;font-size:10px;color:var(--muted)}
@@ -155,6 +147,7 @@
     <div class="avatar-panel">
       <div class="avatar-frame">
         <video id="avatarVideo" autoplay playsinline></video>
+        <!-- FIX: always muted — we play audio via browser directly, not Simli -->
         <audio id="avatarAudio" autoplay muted></audio>
         <div class="avatar-placeholder" id="avatarPlaceholder">
           <svg viewBox="0 0 24 24"><path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/></svg>
@@ -163,7 +156,7 @@
       </div>
 
       <div class="mic-row">
-        <button class="mic-btn" id="micBtn" id="micBtnEl" onclick="if(window.toggleLive)window.toggleLive()" aria-label="Microphone">
+        <button class="mic-btn" id="micBtn" onclick="if(window.toggleLive)window.toggleLive()" aria-label="Microphone">
           <svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 003-3V5a3 3 0 00-6 0v6a3 3 0 003 3zm5-3a5 5 0 01-10 0H5a7 7 0 006 6.92V21h2v-3.08A7 7 0 0019 11h-2z"/></svg>
         </button>
         <div class="mic-label" id="micLabel">Tap to speak</div>
@@ -207,45 +200,33 @@
   let simliReady = false;
   let deepgramAvailable = false;
 
-  // Simli config — loaded from server
   let SIMLI_API_KEY = '';
   let SIMLI_FACE_ID = '';
 
-  // Browsers block audio autoplay until the user interacts with the page.
-  // We queue any greeting audio that arrives before the first click/tap.
   let audioUnlocked = false;
   let pendingGreetingAudio = null;
 
   function unlockAudio() {
     if (audioUnlocked) return;
     audioUnlocked = true;
-    // Unmute the Simli avatar audio element
-    const aEl = document.getElementById('avatarAudio');
-    if (aEl) { aEl.muted = false; aEl.play && aEl.play().catch(() => {}); }
-    // Play any greeting that was waiting for a user gesture
+    // FIX: do NOT unmute or play avatarAudio — we handle audio directly
+    // Play any greeting that arrived before user interaction
     if (pendingGreetingAudio) {
       const a = new Audio('data:audio/mpeg;base64,' + pendingGreetingAudio);
       a.play().catch(() => {});
       pendingGreetingAudio = null;
     }
   }
-  // First interaction anywhere unlocks audio
   document.addEventListener('click', unlockAudio, { once: false });
   document.addEventListener('keydown', unlockAudio, { once: false });
 
-  // AudioWorklet for mic → PCM16.
-  // Buffers ~100ms of audio before posting, so we send far fewer (larger)
-  // messages — this prevents flooding the Socket.IO polling transport
-  // ("Too many packets in payload").
+  // AudioWorklet for mic → PCM16
   const WORKLET = `
     class PcmProcessor extends AudioWorkletProcessor {
       constructor() {
         super();
         this._buf = [];
         this._count = 0;
-        // 16000 Hz * 0.04s = 640 samples per send (~40ms)
-        // Small enough for accurate Deepgram interim results, large enough
-        // to avoid flooding the Socket.IO polling transport.
         this._target = 640;
       }
       process(inputs) {
@@ -280,7 +261,6 @@
     try {
       document.getElementById('avatarStatus').textContent = 'Loading avatar…';
 
-      // Get session token from our server (keeps API key server-side)
       const r = await fetch('/api/simli/session');
       if (!r.ok) { showErr('Could not get Simli session'); return; }
       const { session_token, ice_servers } = await r.json();
@@ -290,15 +270,15 @@
 
       const SC = (window.SimliClientLib && window.SimliClientLib.SimliClient) || window.SimliClient;
       if (!SC) { document.getElementById("avatarStatus").textContent = "Simli SDK not loaded"; return; }
-      // Use LiveKit transport — no ICE servers required, more reliable
+
       simliClient = new SC(
         session_token,
         videoEl,
         audioEl,
-        null,           // iceServers — not needed for livekit
-        undefined,      // logLevel
-        "livekit",      // transport_mode
-        "websockets",   // signaling
+        null,
+        undefined,
+        "livekit",
+        "websockets",
       );
 
       simliClient.on('start', () => {
@@ -306,19 +286,18 @@
         document.getElementById('avatarPlaceholder').style.display = 'none';
         document.getElementById('avatarStatus').textContent = 'Avatar ready';
         setStatus('live', 'Avatar ready');
-        // We play TTS through the browser (reliable). Mute Simli's own audio
-        // element so we don't get doubled or conflicting audio.
+        // FIX: aggressively silence Simli's audio output — we play MP3 directly
         const aEl = document.getElementById('avatarAudio');
-        if (aEl) { aEl.muted = true; }
+        if (aEl) {
+          aEl.muted = true;
+          aEl.volume = 0;
+          aEl.pause();
+          aEl.onplay = () => { aEl.pause(); };
+        }
       });
 
-      simliClient.on('stop', () => {
-        simliReady = false;
-      });
-
-      simliClient.on('error', (e) => {
-        console.warn('Simli error:', e);
-      });
+      simliClient.on('stop', () => { simliReady = false; });
+      simliClient.on('error', (e) => { console.warn('Simli error:', e); });
 
       await simliClient.start();
     } catch (e) {
@@ -327,21 +306,18 @@
     }
   }
 
-  // Send PCM16 audio to Simli to animate the face
+  // Send PCM16 audio to Simli for lip-sync
   async function sendToSimli(audioBase64) {
     if (!simliReady || !simliClient) return;
     try {
-      // Decode base64 to ArrayBuffer
       const binary = atob(audioBase64);
       const bytes = new Uint8Array(binary.length);
       for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
 
-      // Decode MP3 → PCM float32 using Web Audio API
       const decodeCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
       const audioBuffer = await decodeCtx.decodeAudioData(bytes.buffer.slice(0));
       await decodeCtx.close();
 
-      // Convert float32 PCM → int16 PCM (what Simli expects)
       const float32 = audioBuffer.getChannelData(0);
       const int16 = new Int16Array(float32.length);
       for (let i = 0; i < float32.length; i++) {
@@ -354,8 +330,6 @@
     }
   }
 
-  // Cleanly close the Simli session so it doesn't linger and hit the
-  // concurrent-session rate limit on the next page load.
   function closeSimli() {
     try {
       if (simliClient) {
@@ -367,7 +341,6 @@
     simliReady = false;
   }
 
-  // Close the session when the user leaves or reloads the page.
   window.addEventListener('beforeunload', closeSimli);
   window.addEventListener('pagehide', closeSimli);
 
@@ -410,10 +383,8 @@
         setMicState('speaking');
         setStatus('speaking', 'Speaking…');
 
-        // VOICE: always play the TTS audio directly in the browser — this is the
-        // reliable path. (Simli's own audio playback has been unreliable.)
+        // Play audio directly in browser (single source — no Simli audio)
         if (!audioUnlocked) {
-          // Audio arrived before any user interaction — queue it for first tap.
           pendingGreetingAudio = d.audio_base64;
           setStatus('ready', 'Tap anywhere to hear the greeting');
         } else {
@@ -421,14 +392,11 @@
           audio.play().catch(() => {});
         }
 
-        // LIP-SYNC (best effort): also feed the audio to Simli to animate the
-        // mouth. If it fails, the voice above still plays.
+        // Send PCM to Simli for lip-sync only (audio is muted on Simli side)
         if (simliReady) {
           sendToSimli(d.audio_base64);
         }
 
-        // Estimate speech duration to resume listening after avatar finishes
-        // MP3 at ~32kbps: bytes * 8 / 32000 seconds, minimum 1s
         const bytes = atob(d.audio_base64).length;
         const estimatedMs = Math.max(1000, (bytes * 8 / 32000) * 1000);
         setTimeout(() => {
@@ -467,7 +435,6 @@
         if (socket && isLive && !isSpeaking) socket.emit('audio_chunk', e.data);
       };
       source.connect(processor);
-      // Connect to a muted destination so the worklet actually runs in all browsers
       const sink = audioCtx.createGain();
       sink.gain.value = 0;
       processor.connect(sink);
@@ -517,10 +484,9 @@
       if (d.audio_base64) {
         if (simliReady) {
           sendToSimli(d.audio_base64);
-        } else {
-          const audio = new Audio('data:audio/mpeg;base64,' + d.audio_base64);
-          audio.play().catch(() => {});
         }
+        const audio = new Audio('data:audio/mpeg;base64,' + d.audio_base64);
+        audio.play().catch(() => {});
       }
     } catch (e) { hideThinking(); showErr('Error: ' + e.message); }
   };
