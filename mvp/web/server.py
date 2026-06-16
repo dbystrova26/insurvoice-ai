@@ -1,26 +1,36 @@
 """
-server.py  –  Flask-SocketIO backend for InsurVoice AI avatar
+server.py – InsurVoice AI backend
+Matches the existing avatar.html frontend exactly.
 
-Fixes applied:
-1. ElevenLabs PCM audio piped to Simli (not base64 to browser)
-2. WebSocket transport enabled (Render supports it)
-3. Simli session lifecycle managed server-side
-4. Deepgram configured for webm/opus (browser default)
-5. Uses InsurVoiceAgent from agent.py (no llm.py needed)
+Frontend expects:
+  Socket events IN:  connect, start_stream, stop_stream, resume_stream, audio_chunk
+  Socket events OUT: connected, stream_ready, partial_transcript, transcript, reply
+  REST routes:       GET /api/simli/session
+                     GET /api/health
+                     POST /api/text
+                     POST /api/reset
+
+Audio pipeline:
+  Mic PCM16 → audio_chunk → Deepgram streaming STT → agent → ElevenLabs MP3
+  → reply{audio_base64} → browser plays audio + sends PCM to Simli for lip-sync
 """
 
 import os
+import io
+import json
+import uuid
 import base64
-import threading
-import requests
 import logging
+import threading
 
-from flask import Flask, render_template, request
+import requests
+from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit
 
-from voice import synthesize_elevenlabs_pcm
-from stt import transcribe_deepgram
 from agent import InsurVoiceAgent
+from stream import DeepgramStreamSession, transcribe_chunk
+from voice import synthesize_elevenlabs_mp3
+from n8n_integration import fire_n8n_webhook
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -28,7 +38,6 @@ log = logging.getLogger(__name__)
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET", "dev-secret")
 
-# ── WebSocket enabled – Render supports it ──────────────────────────────────
 socketio = SocketIO(
     app,
     cors_allowed_origins="*",
@@ -40,143 +49,80 @@ socketio = SocketIO(
     engineio_logger=False,
 )
 
-SIMLI_API_KEY     = os.environ["SIMLI_API_KEY"]
-SIMLI_FACE_ID     = os.environ.get("SIMLI_FACE_ID", "tmp9i8bbq7")
-ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
+# ── Env vars ────────────────────────────────────────────────────────────────
+ANTHROPIC_KEY    = os.environ.get("ANTHROPIC_API_KEY", "")
+DEEPGRAM_KEY     = os.environ.get("DEEPGRAM_API_KEY", "")
+ELEVENLABS_KEY   = os.environ.get("ELEVENLABS_API_KEY", "")
+ELEVENLABS_VOICE = os.environ.get("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
+SIMLI_API_KEY    = os.environ.get("SIMLI_API_KEY", "")
+SIMLI_FACE_ID    = os.environ.get("SIMLI_FACE_ID", "tmp9i8bbq7")
+N8N_WEBHOOK_URL  = os.environ.get("N8N_WEBHOOK_URL", "")
 
-# Per-socket state
+# ── Per-socket state ─────────────────────────────────────────────────────────
+# { sid: { agent, dg_session, call_id, turn_count, start_time } }
 sessions: dict[str, dict] = {}
-agents:   dict[str, InsurVoiceAgent] = {}
 
 
-# ── Simli helpers ───────────────────────────────────────────────────────────
+# ── Helpers ──────────────────────────────────────────────────────────────────
 
-def create_simli_session(face_id: str) -> dict:
-    """Create a Simli session server-side and return its credentials."""
-    resp = requests.post(
-        "https://api.simli.ai/startAudioToVideoSession",
-        json={
-            "faceId":    face_id,
-            "isJPG":     False,
-            "apiKey":    SIMLI_API_KEY,
-            "syncAudio": True,
-        },
-        timeout=15,
-    )
-    resp.raise_for_status()
-    data = resp.json()
-    log.info("Simli session created: %s", data.get("session_id"))
-    return data
-
-
-def send_pcm_to_simli(session_id: str, token: str, pcm_bytes: bytes) -> None:
-    """POST raw PCM-16 audio to Simli. Expects 16kHz mono 16-bit LE."""
+def make_tts_mp3(text: str) -> str | None:
+    """Return base64-encoded MP3 or None on failure."""
     try:
-        resp = requests.post(
-            "https://api.simli.ai/sendAudio",
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Content-Type":  "audio/pcm",
-            },
-            params={"sessionId": session_id},
-            data=pcm_bytes,
-            timeout=30,
-        )
-        if resp.status_code != 200:
-            log.error("Simli sendAudio %s: %s", resp.status_code, resp.text[:200])
-        else:
-            log.info("Sent %d PCM bytes to Simli %s", len(pcm_bytes), session_id)
-    except Exception as exc:
-        log.error("send_pcm_to_simli failed: %s", exc)
+        mp3_bytes = synthesize_elevenlabs_mp3(text)
+        return base64.b64encode(mp3_bytes).decode()
+    except Exception as e:
+        log.error("TTS error: %s", e)
+        return None
 
 
-# ── Socket events ───────────────────────────────────────────────────────────
-
-@socketio.on("connect")
-def on_connect():
-    sid = request.sid
-    log.info("Client connected: %s", sid)
-    try:
-        simli = create_simli_session(SIMLI_FACE_ID)
-        sessions[sid] = {
-            "simli_session_id": simli["session_id"],
-            "simli_token":      simli["token"],
-        }
-        agents[sid] = InsurVoiceAgent(api_key=ANTHROPIC_API_KEY)
-
-        emit("simli_session", {
-            "session_id":    simli["session_id"],
-            "token":         simli["token"],
-            "livekit_url":   simli.get("livekit_url", ""),
-            "livekit_token": simli.get("livekit_token", ""),
-        })
-    except Exception as exc:
-        log.error("Connect setup failed for %s: %s", sid, exc)
-        emit("error", {"message": "Avatar session could not be started."})
-
-
-@socketio.on("disconnect")
-def on_disconnect():
-    sid = request.sid
-    sessions.pop(sid, None)
-    agents.pop(sid, None)
-    log.info("Client disconnected: %s", sid)
-
-
-@socketio.on("user_audio")
-def on_user_audio(data: dict):
-    """
-    Browser sends: { "audio": "<base64 webm/opus>" }
-    Pipeline: Deepgram STT -> InsurVoiceAgent -> ElevenLabs PCM -> Simli
-    """
-    sid = request.sid
+def agent_and_tts(sid: str, text: str):
+    """Run agent + TTS in background, emit reply to client."""
     session = sessions.get(sid)
-    agent   = agents.get(sid)
-
-    if not session or not agent:
-        emit("error", {"message": "No session. Please reconnect."})
+    if not session:
         return
+    agent = session["agent"]
 
-    raw_audio = base64.b64decode(data["audio"])
+    try:
+        result     = agent.respond(text)
+        reply_text = result["response"]
+        audio_b64  = make_tts_mp3(reply_text)
 
-    # 1. Transcribe
-    transcript = transcribe_deepgram(raw_audio)
-    if not transcript:
-        return
+        session["turn_count"] += 1
 
-    log.info("[%s] User: %s", sid, transcript)
-    emit("transcript", {"text": transcript, "role": "user"})
+        payload = {
+            "reply":       reply_text,
+            "intent":      result.get("intent", ""),
+            "escalated":   result.get("should_escalate", False),
+            "handoff_summary": result.get("handoff_summary", ""),
+            "audio_base64": audio_b64,
+            "agent_trace": [],
+        }
+        socketio.emit("reply", payload, to=sid)
 
-    # 2. Agent response
-    result     = agent.respond(transcript)
-    reply_text = result["response"]
-    log.info("[%s] Agent: %s", sid, reply_text[:80])
-    emit("transcript", {"text": reply_text, "role": "assistant"})
-
-    # Notify frontend if escalating to human
-    if result.get("should_escalate"):
-        emit("escalate", {
-            "reason":  result.get("escalation_reason", ""),
-            "summary": result.get("handoff_summary", ""),
-        })
-
-    # 3. TTS -> PCM -> Simli (background thread)
-    def _tts_and_send():
-        try:
-            pcm_bytes = synthesize_elevenlabs_pcm(reply_text)
-            send_pcm_to_simli(
-                session["simli_session_id"],
-                session["simli_token"],
-                pcm_bytes,
+        # n8n webhook (non-blocking, best-effort)
+        if N8N_WEBHOOK_URL and result.get("should_escalate"):
+            fire_n8n_webhook(
+                call_id=session["call_id"],
+                intent=result.get("intent", ""),
+                route=result.get("route", ""),
+                language="en",
+                turn_count=session["turn_count"],
+                resolved=False,
+                escalated=True,
+                handoff_summary=result.get("handoff_summary", ""),
+                compliance_passed=True,
+                conversation_history=agent.conversation_history,
             )
-        except Exception as exc:
-            log.error("TTS/Simli error for %s: %s", sid, exc)
-            socketio.emit("error", {"message": "Audio generation failed."}, to=sid)
 
-    threading.Thread(target=_tts_and_send, daemon=True).start()
+    except Exception as e:
+        log.error("[%s] agent_and_tts error: %s", sid, e)
+        socketio.emit("reply", {
+            "reply": "I'm having a technical issue. Let me connect you to a colleague.",
+            "intent": "error", "escalated": True, "audio_base64": None,
+        }, to=sid)
 
 
-# ── Routes ──────────────────────────────────────────────────────────────────
+# ── REST routes ──────────────────────────────────────────────────────────────
 
 @app.route("/")
 def index():
@@ -186,6 +132,183 @@ def index():
 @app.route("/avatar")
 def avatar():
     return render_template("avatar.html")
+
+
+@app.route("/api/health")
+def health():
+    return jsonify({
+        "status":    "ok",
+        "anthropic": bool(ANTHROPIC_KEY),
+        "deepgram":  bool(DEEPGRAM_KEY),
+        "elevenlabs": bool(ELEVENLABS_KEY),
+        "simli":     bool(SIMLI_API_KEY),
+    })
+
+
+@app.route("/api/simli/session")
+def simli_session():
+    """
+    Called by the browser JS to get a Simli session token.
+    Keeps the API key server-side.
+    """
+    if not SIMLI_API_KEY:
+        return jsonify({"error": "SIMLI_API_KEY not configured"}), 503
+    try:
+        resp = requests.post(
+            "https://api.simli.ai/startAudioToVideoSession",
+            json={
+                "faceId":    SIMLI_FACE_ID,
+                "isJPG":     False,
+                "apiKey":    SIMLI_API_KEY,
+                "syncAudio": True,
+            },
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return jsonify({
+            "session_token": data.get("session_token") or data.get("token", ""),
+            "ice_servers":   data.get("ice_servers", []),
+            # also expose livekit fields in case the SDK needs them
+            "livekit_url":   data.get("livekit_url", ""),
+            "livekit_token": data.get("livekit_token", ""),
+        })
+    except Exception as e:
+        log.error("Simli session error: %s", e)
+        return jsonify({"error": str(e)}), 502
+
+
+@app.route("/api/text", methods=["POST"])
+def api_text():
+    """Text-input fallback (no mic). Used by the Send button."""
+    body = request.get_json(silent=True) or {}
+    text = (body.get("text") or "").strip()
+    if not text:
+        return jsonify({"error": "empty text"}), 400
+
+    # Use a temporary agent for text-only calls (no persistent socket session)
+    agent = InsurVoiceAgent(api_key=ANTHROPIC_KEY)
+    result = agent.respond(text)
+    reply_text = result["response"]
+
+    audio_b64 = None
+    if body.get("tts") and ELEVENLABS_KEY:
+        audio_b64 = make_tts_mp3(reply_text)
+
+    return jsonify({
+        "reply":       reply_text,
+        "intent":      result.get("intent", ""),
+        "escalated":   result.get("should_escalate", False),
+        "handoff_summary": result.get("handoff_summary", ""),
+        "audio_base64": audio_b64,
+        "agent_trace": [],
+    })
+
+
+@app.route("/api/reset", methods=["POST"])
+def api_reset():
+    """Reset the agent for the current socket session (New Call button)."""
+    sid = request.headers.get("X-Socket-ID", "")
+    if sid and sid in sessions:
+        sessions[sid]["agent"].reset()
+        sessions[sid]["turn_count"] = 0
+        sessions[sid]["call_id"] = str(uuid.uuid4())
+    return jsonify({"ok": True})
+
+
+# ── Socket events ─────────────────────────────────────────────────────────────
+
+@socketio.on("connect")
+def on_connect():
+    sid = request.sid
+    log.info("Client connected: %s", sid)
+
+    sessions[sid] = {
+        "agent":       InsurVoiceAgent(api_key=ANTHROPIC_KEY),
+        "dg_session":  None,
+        "call_id":     str(uuid.uuid4()),
+        "turn_count":  0,
+    }
+
+    # Tell the browser what's available
+    emit("connected", {
+        "deepgram_available": bool(DEEPGRAM_KEY),
+        "simli_api_key":      SIMLI_API_KEY,
+        "simli_face_id":      SIMLI_FACE_ID,
+    })
+
+    # Send greeting immediately via agent
+    threading.Thread(
+        target=agent_and_tts,
+        args=(sid, "Hello, please greet the customer."),
+        daemon=True,
+    ).start()
+
+
+@socketio.on("disconnect")
+def on_disconnect():
+    sid = request.sid
+    session = sessions.pop(sid, None)
+    if session and session.get("dg_session"):
+        try:
+            session["dg_session"].stop()
+        except Exception:
+            pass
+    log.info("Client disconnected: %s", sid)
+
+
+@socketio.on("start_stream")
+def on_start_stream():
+    """Browser starts sending mic audio. Open a Deepgram streaming session."""
+    sid = request.sid
+    session = sessions.get(sid)
+    if not session:
+        return
+
+    def on_transcript(text: str, is_final: bool, language: str):
+        if not is_final:
+            socketio.emit("partial_transcript", {"text": text}, to=sid)
+            return
+        # Final transcript → emit to browser then run agent
+        socketio.emit("transcript", {"text": text, "language": language}, to=sid)
+        threading.Thread(
+            target=agent_and_tts, args=(sid, text), daemon=True
+        ).start()
+
+    dg = DeepgramStreamSession(api_key=DEEPGRAM_KEY, on_transcript=on_transcript)
+    dg.start()
+    session["dg_session"] = dg
+    emit("stream_ready")
+
+
+@socketio.on("stop_stream")
+def on_stop_stream():
+    sid = request.sid
+    session = sessions.get(sid)
+    if session and session.get("dg_session"):
+        session["dg_session"].stop()
+        session["dg_session"] = None
+
+
+@socketio.on("resume_stream")
+def on_resume_stream():
+    """Re-open Deepgram after the avatar finishes speaking."""
+    on_start_stream()
+
+
+@socketio.on("audio_chunk")
+def on_audio_chunk(data):
+    """Raw PCM16 chunk from the browser AudioWorklet → forward to Deepgram."""
+    sid = request.sid
+    session = sessions.get(sid)
+    if not session:
+        return
+    dg = session.get("dg_session")
+    if dg and dg.is_alive():
+        if isinstance(data, (bytes, bytearray)):
+            dg.send_audio(bytes(data))
+        elif hasattr(data, "tobytes"):
+            dg.send_audio(data.tobytes())
 
 
 if __name__ == "__main__":
