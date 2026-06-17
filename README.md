@@ -68,35 +68,353 @@ Both results combined → injected into Claude system prompt:
     Water escaping from fixed pipes is covered as Leitungswasser...
 ```
 
-### Automation Layer
+### Automation Layer — n8n Workflow
+
+Every call triggers the **Call Ended Webhook** to n8n, which routes data through the automation pipeline:
 
 ```
-InsurVoiceAgent (on escalation)
-    ↓ n8n webhook, non-blocking background thread
-n8n Workflow
-    ├── Google Sheets ── logs escalated call
-    ├── Gmail ────────── sends agent briefing email
-    └── Slack ────────── posts to #insurvoice-alerts with urgency
+Flask Backend (agent.py)
+    ├── Call ends
+    ├── fire_n8n_webhook() fires in background thread
+    └── POST to n8n with escalation data
+                ↓
+n8n Webhook Trigger: "Call Ended Webhook"
+    ├── Responds immediately (200 OK back to Flask)
+    ├── Logs to Google Sheets (ALL calls)
+    ├── Sends Customer Summary Email (ALL calls) → customer_email
+    └── SWITCH: "Was Escalated?"
+         ├─ TRUE branch:
+         │   ├── Sends Agent Briefing Email → dbystrova26@gmail.com
+         │   ├── Posts Slack Alert → #insurvoice-alerts
+         │   └── Google Sheets flags: escalated=TRUE
+         └─ FALSE branch:
+             └── (inactive for non-escalations)
+```
+
+#### N8N Webhook Data Structure
+
+The Flask backend sends this payload to n8n:
+
+```json
+{
+  "call_id": "7af060b2-284e-43a5-bbf1-8eee92a5c0a6",
+  "timestamp": "2026-06-17 14:12",
+  "intent": "escalate_human",
+  "route": "escalation",
+  "language": "en",
+  "turn_count": 4,
+  "resolved": false,
+  "escalated": true,
+  "handoff_summary": "**Handoff Summary:** The customer is calling to file an insurance claim...",
+  "compliance_passed": true,
+  "urgency": "low",
+  "summary": "Customer contacted InsurVoice AI regarding escalate_human...",
+  "duration_seconds": 0,
+  "customer_name": "Unknown",
+  "customer_email": ""
+}
+```
+
+**Key fields:**
+- `escalated: true/false` — triggers SWITCH branching
+- `handoff_summary` — sent to agent briefing
+- `customer_email` — recipient for customer summary
+- `urgency` — low/medium/high priority badge
+- `compliance_passed` — GDPR/EU AI Act compliance flag
+
+#### N8N Workflow Configuration
+
+**Webhook Node Settings:**
+- URL: `https://daria-b.n8n.irn.hk/webhook/insurvoice-call`
+- Method: POST
+- Response: Respond OK (200) immediately
+
+**SWITCH Node Logic:**
+```
+Condition: {{ $json.body.escalated }} is equal to true
+├─ TRUE branch → Email Agent Briefing + Slack Alert
+└─ FALSE branch → (inactive)
+```
+
+**Key Fix:** All field references use `.body.` prefix because n8n receives the webhook wrapped in HTTP headers structure:
+```
+{{ $json.body.call_id }}
+{{ $json.body.customer_name }}
+{{ $json.body.intent }}
+{{ $json.body.urgency }}
+{{ $json.body.handoff_summary }}
+{{ $json.body.timestamp }}
 ```
 
 ---
 
-## Tech Stack
+## Automation Outputs
 
-| Layer | Technology |
-|---|---|
-| **Backend** | Flask + Flask-SocketIO (threading mode, gunicorn sync worker) |
-| **Speech-to-text** | Deepgram nova-2 (live WebSocket streaming, `stream.py`) |
-| **Reasoning** | Anthropic Claude Sonnet (`claude-sonnet-4-6`) |
-| **Text-to-speech** | ElevenLabs `eleven_turbo_v2_5` (MP3 output) |
-| **Avatar** | Simli WebRTC (lip-synced, LiveKit transport) |
-| **RAG — primary** | pgvector semantic search on Supabase (`rag.py`) |
-| **RAG — always-on** | 87-FAQ keyword search (`knowledge.py` + `knowledge_base.json`) |
-| **Embeddings** | OpenAI `text-embedding-3-large` (1536 dims) |
-| **CRM database** | Supabase PostgreSQL (`crm.py`) |
-| **Automation** | n8n (Gmail + Google Sheets + Slack) |
-| **Compliance** | EU AI Act Art. 52 + GDPR enforced at runtime |
-| **Deployment** | Render.com (gunicorn sync worker, 100 threads) |
+### 1. **Agent Briefing Email** ✅
+
+Sent to support team on escalation:
+
+```
+📧 To: dbystrova26@gmail.com
+Subject: Escalation Required — Call ID {call_id}
+
+⚡ Escalation Required
+InsurVoice AI • Human handoff
+
+Agent Briefing:
+├─ Customer: Unknown
+├─ Email: (blank if not provided)
+├─ Topic: escalate_human
+├─ Language: en
+├─ Turns: 4
+├─ Priority: 🟢 LOW
+│
+├─ Handoff Summary:
+│  "The customer is calling to file an insurance claim 
+│   and has confirmed they have all the necessary 
+│   details ready to proceed..."
+│
+├─ Conversation Summary:
+│  "Customer contacted InsurVoice AI regarding escalate_human.
+│   The conversation lasted 8 exchanges..."
+│
+└─ Call ID: 041175c9-7622-4d28-bb19-927df1491621
+   Timestamp: 2026-06-17 10:50
+   Compliance: ✓ Passed
+```
+
+**Template:** HTML with orange gradient header, professional table layout, compliance notice
+
+### 2. **Customer Summary Email** ✅
+
+Sent to customer for ALL calls (escalated or not):
+
+```
+📧 To: {customer_email} (or agent if blank)
+Subject: Your Support Summary — Call ID {call_id}
+
+✓ Your Support Request
+InsurVoice AI • Call Summary
+
+Thank you for contacting Allianz Direct. Here's a summary 
+of your interaction:
+
+Call Summary:
+"Customer contacted InsurVoice AI regarding escalate_human.
+ The conversation lasted 8 exchanges. The matter was not 
+ fully resolved and requires follow-up."
+
+Call Details:
+├─ Call ID: 041175c9-7622-4d28-bb19-927df1491621
+├─ Date & Time: 2026-06-17 10:04
+├─ Topic: escalate_human
+├─ Language: en
+└─ Resolution: Pending - Agent follow-up required
+
+Data Protection: This call was processed in compliance 
+with GDPR and data protection regulations.
+
+Next Steps: A human agent will contact you shortly 
+to complete your request.
+```
+
+**Template:** HTML with blue gradient header, call details table, GDPR compliance notice, dynamic next steps
+
+### 3. **Slack Alert** ✅
+
+Posted to `#insurvoice-alerts` on escalation:
+
+```
+🚨 ESCALATION ALERT
+
+Call ID: `041175c9-7622-4d28-bb19-927df1491621`
+Customer: Unknown
+Topic: escalate_human
+Language: en
+Turns: 4
+Priority: 🟡 MEDIUM
+
+Brief:
+**Handoff Summary:**
+The customer is calling to file an insurance claim 
+and has confirmed they have all the necessary details ready 
+to proceed. They have requested to speak with a human agent 
+instead of continuing with the AI assistant.
+
+Full briefing sent to email • Duration: 0s
+Automated with this n8n workflow
+```
+
+**Format:** Rich text with emoji alerts, inline code for Call ID, priority badge, handoff summary
+
+### 4. **Google Sheets Log** ✅
+
+ALL calls logged to Google Sheet: `invoce-ai-data-log`
+
+| Timestamp | Call ID | Customer Name | Customer Email | Language | Intent | Route | Escalated | Resolved | Turns | Duration (s) | Compliance | Summary |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 2026-06-17 09:23 | 1e17d2e8-4220-bc30... | Unknown | (blank) | en | billing_query | billing | TRUE | FALSE | 2 | 0 | TRUE | Customer contacted InsurVoice... |
+| 2026-06-17 08:40 | 9cc7b449-2178-4f0c... | Unknown | (blank) | en | escalate_human escalation | TRUE | FALSE | 4 | 0 | TRUE | Customer contacted InsurVoice... |
+
+**Captures:** Timestamp, call_id, customer details, language, intent routing, escalation flag, resolution status, turn count, duration, compliance check, full conversation summary
+
+---
+
+## N8N Workflow Diagram
+
+```
+┌──────────────────────┐
+│ Call Ended Webhook   │ (receives POST from Flask)
+│ (POST)               │
+└──────────────────────┘
+           │
+           ├─────────────┐
+           │             │
+    (responds OK)   │
+           │        │
+    ┌──────────────────────┐
+    │ Respond OK           │ (200 OK back to Flask immediately)
+    └──────────────────────┘
+           │
+           ├─ ALL CALLS ────────────────────────┐
+           │                                    │
+    ┌─────────────────────────┐      ┌──────────────────────┐
+    │ Log to Google Sheets    │      │ Email Customer       │
+    │ (append: sheet)         │      │ Summary              │
+    └─────────────────────────┘      └──────────────────────┘
+           │
+    ┌──────────────────────┐
+    │ Was Escalated?       │ (SWITCH: $json.body.escalated == true)
+    └──────────────────────┘
+           │
+      ┌────┴────┐
+      │          │
+    TRUE      FALSE
+      │          │
+      ├─ ON ESCALATION ─────────────────┐
+      │                                 │
+   ┌──────────────────────┐    (inactive)
+   │ Email Agent Briefing │
+   │ (send: message)      │
+   └──────────────────────┘
+      │
+   ┌──────────────────────┐
+   │ Send a message       │ (Slack)
+   │ (post: message)      │
+   │ to #insurvoice-alerts│
+   └──────────────────────┘
+```
+
+---
+
+## Setup: N8N Workflow
+
+### Prerequisites
+1. **N8N account** (self-hosted or n8n.cloud)
+2. **Slack workspace** with bot permissions
+3. **Gmail account** with app password
+4. **Google Sheets** document with columns for logging
+
+### Step 1: Create Webhook Trigger
+
+1. Create new n8n workflow
+2. Add **Webhook** node
+3. Set:
+   - **Method:** POST
+   - **Path:** `/webhook/insurvoice-call`
+   - **Authentication:** None (we'll validate in Flask)
+4. **Respond immediately:** Yes (200 OK)
+
+### Step 2: Add Google Sheets Node (ALL CALLS)
+
+1. **Node:** Google Sheets (append row)
+2. **Spreadsheet:** Select your logging sheet
+3. **Sheet:** Select sheet tab
+4. **Map columns:**
+   - Timestamp: `{{ $json.body.timestamp }}`
+   - Call ID: `{{ $json.body.call_id }}`
+   - Customer Name: `{{ $json.body.customer_name }}`
+   - Customer Email: `{{ $json.body.customer_email }}`
+   - Language: `{{ $json.body.language }}`
+   - Intent: `{{ $json.body.intent }}`
+   - Route: `{{ $json.body.route }}`
+   - Escalated: `{{ $json.body.escalated }}`
+   - Resolved: `{{ $json.body.resolved }}`
+   - Turns: `{{ $json.body.turn_count }}`
+   - Duration (s): `{{ $json.body.duration_seconds }}`
+   - Compliance: `{{ $json.body.compliance_passed }}`
+   - Summary: `{{ $json.body.summary }}`
+
+### Step 3: Add Email Customer Summary Node (ALL CALLS)
+
+1. **Node:** Gmail (send email)
+2. **To Email:** `{{ $json.body.customer_email }}`
+3. **Subject:** `Your Support Summary — Call ID {{ $json.body.call_id }}`
+4. **Email Type:** HTML
+5. **Message Text:** [See Customer Summary template above]
+
+### Step 4: Add SWITCH Node
+
+1. **Node:** SWITCH
+2. **Condition:** `{{ $json.body.escalated }}` is equal to `true`
+3. **Connect TRUE branch** to next nodes (Agent Briefing + Slack)
+
+### Step 5: Add Email Agent Briefing Node (ESCALATION ONLY)
+
+1. **Connect to:** SWITCH TRUE branch
+2. **Node:** Gmail (send email)
+3. **To Email:** `dbystrova26@gmail.com`
+4. **Subject:** `Escalation Required — Call ID {{ $json.body.call_id }}`
+5. **Email Type:** HTML
+6. **Message Text:** [See Agent Briefing template above]
+
+### Step 6: Add Slack Alert Node (ESCALATION ONLY)
+
+1. **Connect to:** SWITCH TRUE branch
+2. **Node:** Slack (send message)
+3. **Channel:** `#insurvoice-alerts`
+4. **Message Type:** Simple Text Message
+5. **Message Text:**
+```
+🚨 *ESCALATION ALERT*
+
+*Call ID:* `{{ $json.body.call_id }}`
+*Customer:* {{ $json.body.customer_name }}
+*Topic:* {{ $json.body.intent }}
+*Language:* {{ $json.body.language }}
+*Turns:* {{ $json.body.turn_count }}
+*Priority:* {{ $json.body.urgency | capitalize }}
+
+*Brief:*
+{{ $json.body.handoff_summary }}
+
+_Full briefing sent to email • Duration: {{ $json.body.duration_seconds }}s_
+```
+
+### Step 7: Test & Deploy
+
+1. **Save workflow**
+2. Trigger a test escalation in the app
+3. Verify:
+   - ✅ Row added to Google Sheets
+   - ✅ Customer email received
+   - ✅ Agent email received
+   - ✅ Slack message posted
+
+---
+
+## Environment Variables (Render)
+
+Add to Render dashboard → Environment:
+
+```
+N8N_WEBHOOK_URL=https://{your-n8n-instance}/webhook/insurvoice-call
+
+GMAIL_EMAIL=your-email@gmail.com
+GMAIL_PASSWORD=xxxx xxxx xxxx xxxx  (16-char app password, not account password)
+```
+
+**Note:** Create Gmail app password at: [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)
 
 ---
 
@@ -268,7 +586,9 @@ Set all in Render dashboard → Environment:
 | `OPENAI_API_KEY` | RAG embeddings | `text-embedding-3-large` for pgvector ingestion |
 | `DATABASE_URL` | Supabase PostgreSQL | RAG chunks + CRM + call_log |
 | `FLASK_SECRET` | Session security | Auto-generated by Render |
-| `N8N_WEBHOOK_URL` | Automation | Optional — fires on escalation |
+| `N8N_WEBHOOK_URL` | Automation | Webhook for escalation notifications |
+| `GMAIL_EMAIL` | Gmail sender | dbystrova26@gmail.com |
+| `GMAIL_PASSWORD` | Gmail app password | 16-char app password (not account password) |
 
 ### ElevenLabs billing note
 
@@ -346,7 +666,10 @@ insurvoice-ai/
 | Text input with session continuity (X-Socket-ID) | ✅ |
 | Intent routing (claims/billing/policy/escalation) | ✅ |
 | EU AI Act disclosure on first turn | ✅ |
-| n8n webhook on escalation (threading, not gevent) | ✅ |
+| **n8n automation workflow** | **✅** |
+| **Google Sheets logging** | **✅** |
+| **Gmail notifications (Agent + Customer)** | **✅** |
+| **Slack escalation alerts** | **✅** |
 | knowledge_base.json preserved across deploys | ✅ |
 
 ---
@@ -368,8 +691,8 @@ insurvoice-ai/
 **Compliance:**
 > *"Are you a real person?"* → identifies as AI (EU AI Act Art. 52)
 
-**Escalation + n8n:**
-> *"I want to speak to a human"* → transfers, fires n8n → Slack alert + Google Sheets log + Gmail briefing
+**Escalation + n8n automation:**
+> *"I want to speak to a human"* → transfers, fires n8n → Slack alert + Google Sheets log + Gmail briefing to agent + customer summary email
 
 ---
 
@@ -391,7 +714,11 @@ insurvoice-ai/
 
 🤖 Tina   Of course, I'll connect you to a colleague right away. Please hold.
 
-↗️ Escalated  |  n8n: Slack #insurvoice-alerts + Google Sheets + Gmail briefing
+↗️ Escalated → n8n Automation:
+   ├── 📊 Google Sheets: New row logged with call details
+   ├── 📧 Agent Briefing: Email sent to support team
+   ├── 📧 Customer Summary: Email sent to customer
+   └── 💬 Slack Alert: Posted to #insurvoice-alerts
 ```
 
 ---
