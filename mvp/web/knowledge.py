@@ -1,8 +1,9 @@
 """
 knowledge.py — InsurVoice AI knowledge base retrieval.
-Keyword search over insurance FAQs. Production: replace with vector DB.
+Keyword search over insurance FAQs. Used as always-on layer alongside pgvector RAG.
 """
 
+import re
 import json
 import pathlib
 
@@ -16,7 +17,7 @@ FAQ_FALLBACK = [
     {
         "id": "claim_process",
         "question": "How do I file a claim?",
-        "answer": "File a claim online at mypolicy.example.com, by phone, or email claims@example-insurance.de. You need your policy number, incident date, description, and photos if available. Claims are acknowledged within 2 business days.",
+        "answer": "File a claim online at mypolicy.allianz-direct.de, by phone, or email schaden@allianz-direct.de. You need your policy number, incident date, description, and photos if available. Claims are acknowledged within 2 business days.",
         "category": "claims",
     },
     {
@@ -32,15 +33,39 @@ FAQ_FALLBACK = [
         "category": "policy",
     },
     {
+        "id": "billing_monthly",
+        "question": "Can I pay monthly instead of annually?",
+        "answer": "Yes. Monthly payment is available with a small surcharge of approximately 3 to 5% annually. Annual payment is cheaper overall. You can switch between payment frequencies at your next renewal date.",
+        "category": "billing",
+    },
+    {
+        "id": "billing_missed",
+        "question": "I missed a payment. What happens?",
+        "answer": "If a payment fails, we retry within 5 days. Your policy then enters a grace period of 14 days during which cover remains active. After the grace period, cover may be suspended. Contact us immediately to arrange payment.",
+        "category": "billing",
+    },
+    {
+        "id": "billing_portal",
+        "question": "How can I change my payment method?",
+        "answer": "You can update your payment method in your online customer portal under Account Settings, or call us. We accept direct debit (SEPA), credit card, and annual bank transfer. Changes take effect from the next billing cycle.",
+        "category": "billing",
+    },
+    {
         "id": "premium_increase",
         "question": "Why has my premium increased?",
         "answer": "Premiums change due to annual market adjustments, changes to your risk profile, or a claim in the previous year. Your renewal letter includes a full breakdown. If you believe it is an error, I can escalate to a billing specialist.",
         "category": "billing",
     },
     {
+        "id": "general_hours",
+        "question": "What are your opening hours?",
+        "answer": "Our customer service team is available Monday to Friday 8am to 8pm and Saturday 9am to 5pm. Our claims emergency line is available 24 hours a day, 7 days a week.",
+        "category": "general",
+    },
+    {
         "id": "cancel_policy",
         "question": "How do I cancel my policy?",
-        "answer": "Cancel at annual renewal with 4 weeks written notice, or immediately if your circumstances change significantly. Send a signed letter or email to cancellations@example-insurance.de with your policy number.",
+        "answer": "Cancel at annual renewal with 4 weeks written notice, or immediately if your circumstances change significantly. Send a signed letter or email to kuendigung@allianz-direct.de with your policy number.",
         "category": "policy",
     },
     {
@@ -60,7 +85,6 @@ def _load_kb() -> list:
             with open(kb_path, encoding="utf-8") as f:
                 data = json.load(f)
             faqs = data.get("faqs", [])
-            # Ensure every item is a dict — guard against list-of-lists from bad data
             if faqs and isinstance(faqs[0], dict):
                 return faqs
         except Exception:
@@ -71,20 +95,21 @@ def _load_kb() -> list:
 def retrieve_context(query: str, top_k: int = 2) -> str:
     """
     Keyword search over the knowledge base.
+    Strips punctuation before matching so "monthly?" matches "monthly".
     Returns top_k matching FAQs as a context string for the LLM.
     """
     faqs = _load_kb()
-    query_lower = query.lower()
+
+    # Strip punctuation from query before splitting into words
+    query_clean = re.sub(r"[^\w\s]", " ", query.lower())
+    query_words = [w for w in query_clean.split() if len(w) > 3]
 
     scored = []
     for faq in faqs:
-        # Safety: skip anything that is not a dict
         if not isinstance(faq, dict):
             continue
-        score = sum(
-            1 for word in query_lower.split()
-            if len(word) > 3 and word in (faq.get("question", "") + " " + faq.get("answer", "")).lower()
-        )
+        faq_text = (faq.get("question", "") + " " + faq.get("answer", "")).lower()
+        score = sum(1 for word in query_words if word in faq_text)
         scored.append((score, faq))
 
     scored.sort(key=lambda x: x[0], reverse=True)
