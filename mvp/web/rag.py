@@ -13,6 +13,8 @@ import os
 import sys
 import json
 import math
+import time
+import logging
 import argparse
 import psycopg2
 import pdfplumber
@@ -26,7 +28,85 @@ DATABASE_URL  = os.getenv("DATABASE_URL", "")
 ANTHROPIC_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 POLICIES_DIR  = Path(__file__).parent / "data" / "policies"
 
+logger = logging.getLogger(__name__)
+
 client = anthropic.Anthropic(api_key=ANTHROPIC_KEY)
+
+
+# ── CIRCUIT BREAKER ──────────────────────────────────────────────
+# Prevents wasting an OpenAI embedding call + 30s connection hang
+# every turn when Supabase is paused or unreachable.
+#
+# States:
+#   _db_ok = True   → DB confirmed working, proceed normally
+#   _db_ok = False  → DB confirmed dead, skip embed + DB entirely
+#   _db_ok = None   → unknown (first run or after retry interval)
+#
+# After a failure the breaker retests every DB_RETRY_INTERVAL seconds
+# so recovery is automatic once Supabase is unpaused.
+
+_db_ok: bool | None = None
+_db_last_checked: float = 0.0
+DB_RETRY_INTERVAL = 60  # seconds between retry attempts when DB is down
+DB_CONNECT_TIMEOUT = 5  # seconds before giving up on a connection attempt
+
+
+def _check_db_health() -> bool:
+    """
+    Probe the DB with a lightweight connection.
+    Updates the circuit breaker state and returns True if healthy.
+    Never raises — all exceptions are caught and logged.
+    """
+    global _db_ok, _db_last_checked
+    if not DATABASE_URL:
+        _db_ok = False
+        return False
+    try:
+        conn = psycopg2.connect(DATABASE_URL, connect_timeout=DB_CONNECT_TIMEOUT)
+        conn.close()
+        if not _db_ok:
+            logger.info("[RAG] Supabase connection restored — pgvector active")
+        _db_ok = True
+        _db_last_checked = time.monotonic()
+        return True
+    except Exception as e:
+        if _db_ok is not False:
+            logger.warning("[RAG] Supabase unavailable — falling back to keyword-only RAG. Error: %s", e)
+        _db_ok = False
+        _db_last_checked = time.monotonic()
+        return False
+
+
+def _db_is_available() -> bool:
+    """
+    Return True if DB is available, using the circuit breaker cache.
+    Retests at most once per DB_RETRY_INTERVAL seconds.
+    """
+    global _db_ok, _db_last_checked
+    now = time.monotonic()
+
+    # Unknown state (startup) → always probe
+    if _db_ok is None:
+        return _check_db_health()
+
+    # DB was working → still assume OK (errors in get_conn() will flip it)
+    if _db_ok is True:
+        return True
+
+    # DB was dead → only retry after the interval
+    if now - _db_last_checked >= DB_RETRY_INTERVAL:
+        return _check_db_health()
+
+    return False
+
+
+def _mark_db_failed(e: Exception):
+    """Call this from get_conn() or semantic_search() when a connection error occurs."""
+    global _db_ok, _db_last_checked
+    if _db_ok is not False:
+        logger.warning("[RAG] Supabase connection failed — circuit breaker open. Error: %s", e)
+    _db_ok = False
+    _db_last_checked = time.monotonic()
 
 
 # ── 1. PDF TEXT EXTRACTION ───────────────────────────────────────
@@ -60,8 +140,6 @@ def chunk_text(text: str, chunk_size: int = 300, overlap: int = 60) -> list[str]
     qa_chunks = [c.strip() for c in qa_pattern if len(c.strip()) > 50]
 
     if len(qa_chunks) > 3:
-        # We have Q&A structure — use it directly as chunks
-        # But merge very short Q&As and split very long ones
         chunks = []
         current = ""
         for qa in qa_chunks:
@@ -74,8 +152,6 @@ def chunk_text(text: str, chunk_size: int = 300, overlap: int = 60) -> list[str]
                 current = qa
         if current:
             chunks.append(current)
-        # Also add the non-FAQ part (policy terms) as word-count chunks
-        # Find where FAQ starts
         faq_start = text.find("APPENDIX")
         if faq_start > 100:
             policy_text = text[:faq_start]
@@ -84,7 +160,7 @@ def chunk_text(text: str, chunk_size: int = 300, overlap: int = 60) -> list[str]
             while start < len(policy_words):
                 end = min(start + chunk_size, len(policy_words))
                 chunk = " ".join(policy_words[start:end])
-                chunks.insert(0, chunk)  # policy chunks first
+                chunks.insert(0, chunk)
                 if end == len(policy_words):
                     break
                 start += chunk_size - overlap
@@ -113,26 +189,18 @@ def embed_text(text: str) -> list[float]:
     Falls back to a simple hash-based vector if API fails.
     """
     try:
-        # Use the Anthropic embeddings API
         import anthropic
         client_embed = anthropic.Anthropic(api_key=ANTHROPIC_KEY)
-
-        # Truncate to avoid token limits
         truncated = " ".join(text.split()[:400])
-
         response = client_embed.messages.create(
             model="claude-opus-4-6",
             max_tokens=1,
             messages=[{"role": "user", "content": truncated}],
             system="Return only the number 1."
         )
-
-        # Since Anthropic doesn't have a direct embedding endpoint in the
-        # standard API, we use OpenAI's embedding as fallback
         raise NotImplementedError("Use OpenAI embeddings")
 
     except Exception:
-        # Use OpenAI text-embedding-3-small (1536 dims, cheap and good)
         try:
             import openai
             openai.api_key = os.getenv("OPENAI_API_KEY", "")
@@ -146,15 +214,12 @@ def embed_text(text: str) -> list[float]:
 
         except Exception as e:
             print(f"  [embed] OpenAI failed: {e}")
-            # Final fallback: deterministic pseudo-embedding from text hash
-            # (for testing without API keys — NOT for production)
             import hashlib
             h = hashlib.sha256(text.encode()).digest()
             vec = []
             for i in range(1536):
                 byte_val = h[i % 32]
                 vec.append((byte_val / 255.0) * 2 - 1)
-            # Normalise
             magnitude = math.sqrt(sum(v**2 for v in vec))
             return [v / magnitude for v in vec]
 
@@ -162,39 +227,41 @@ def embed_text(text: str) -> list[float]:
 def embed_text_simple(text: str, doc_name: str = "") -> list[float]:
     """
     Generate embedding using OpenAI text-embedding-3-large.
-    3072 dimensions, best OpenAI embedding model.
-    Prepends metadata context to improve domain-specific matching.
+    1536 dimensions. Prepends metadata context for better domain matching.
     """
-    try:
-        import openai
-        oa = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
+    import openai
+    oa = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
 
-        # Option 2: metadata prefix for better domain context
-        doc_context = {
-            "Home Contents Insurance": "German home contents insurance policy Hausratversicherung covering fire water damage burst pipe storm theft burglary vandalism deductible EUR 250",
-            "Personal Liability Insurance Policy": "German personal liability insurance Privathaftpflichtversicherung covering dog bite neighbour damage tenant liability accidental damage third party",
-            "Glass Breakage Insurance": "German glass breakage insurance Glasversicherung covering broken window shower screen ceramic bath deductible EUR 100 glazier",
-            "Extension to Home Contents Policy": "German natural hazards extension Elementarversicherung covering flood Hochwasser surface water earthquake groundwater burst pipe storm deductible EUR 500",
-            "Insurance Claims Guide": "Insurance claims guide how to file claim documentation required timeline processing status water damage burglary fire storm vandalism deductible settlement",
-        }
-        prefix = doc_context.get(doc_name, "German insurance policy Allianz Direct")
-        enriched = f"[Context: {prefix}] {text}"
+    doc_context = {
+        "Home Contents Insurance": "German home contents insurance policy Hausratversicherung covering fire water damage burst pipe storm theft burglary vandalism deductible EUR 250",
+        "Personal Liability Insurance Policy": "German personal liability insurance Privathaftpflichtversicherung covering dog bite neighbour damage tenant liability accidental damage third party",
+        "Glass Breakage Insurance": "German glass breakage insurance Glasversicherung covering broken window shower screen ceramic bath deductible EUR 100 glazier",
+        "Extension to Home Contents Policy": "German natural hazards extension Elementarversicherung covering flood Hochwasser surface water earthquake groundwater burst pipe storm deductible EUR 500",
+        "Insurance Claims Guide": "Insurance claims guide how to file claim documentation required timeline processing status water damage burglary fire storm vandalism deductible settlement",
+    }
+    prefix = doc_context.get(doc_name, "German insurance policy Allianz Direct")
+    enriched = f"[Context: {prefix}] {text}"
 
-        resp = oa.embeddings.create(
-            model="text-embedding-3-large",
-            input=enriched[:8000],
-            dimensions=1536  # reduce to 1536 for Supabase compatibility
-        )
-        return resp.data[0].embedding
-    except Exception as e:
-        print(f"  [embed] Error: {e}")
-        raise
+    resp = oa.embeddings.create(
+        model="text-embedding-3-large",
+        input=enriched[:8000],
+        dimensions=1536
+    )
+    return resp.data[0].embedding
 
 
 # ── 4. SUPABASE STORAGE ──────────────────────────────────────────
 
 def get_conn():
-    return psycopg2.connect(DATABASE_URL)
+    """
+    Open a psycopg2 connection with a short timeout.
+    Marks the circuit breaker failed on any exception.
+    """
+    try:
+        return psycopg2.connect(DATABASE_URL, connect_timeout=DB_CONNECT_TIMEOUT)
+    except Exception as e:
+        _mark_db_failed(e)
+        raise
 
 
 def store_chunk(conn, document: str, chunk_index: int,
@@ -217,7 +284,7 @@ def store_chunk(conn, document: str, chunk_index: int,
 def clear_document(conn, document: str):
     """Remove all chunks for a document before re-ingesting."""
     try:
-        conn.rollback()  # clear any failed transaction first
+        conn.rollback()
         cur = conn.cursor()
         cur.execute("DELETE FROM policy_chunks WHERE document = %s", (document,))
         conn.commit()
@@ -254,28 +321,23 @@ def ingest_all():
         print(f"\n{'='*50}")
         print(f"Processing: {pdf_path.name}")
 
-        # Extract text
         print(f"  Extracting text...")
         text = extract_text_from_pdf(pdf_path)
         word_count = len(text.split())
         print(f"  Extracted {word_count} words")
 
-        # Clean PDF artifacts
         import re
-        text = re.sub(r'\(cid:\d+\)', '•', text)  # fix bullet point encoding
-        text = re.sub(r'[ \t]+', ' ', text)          # normalise whitespace
-        text = re.sub(r'\n{3,}', '\n\n', text)     # max 2 newlines
+        text = re.sub(r'\(cid:\d+\)', '•', text)
+        text = re.sub(r'[ \t]+', ' ', text)
+        text = re.sub(r'\n{3,}', '\n\n', text)
         text = text.strip()
 
-        # Chunk
         chunks = chunk_text(text, chunk_size=300, overlap=60)
         print(f"  Created {len(chunks)} chunks")
 
-        # Clear existing chunks for this document
         clear_document(conn, doc_name)
         print(f"  Cleared existing chunks")
 
-        # Embed and store
         for i, chunk in enumerate(chunks):
             print(f"  Embedding chunk {i+1}/{len(chunks)}...", end="\r")
             try:
@@ -300,13 +362,22 @@ def semantic_search(query: str, n_results: int = 4) -> list[dict]:
     """
     Find the most relevant policy chunks for a given query.
     Returns list of {document, content, similarity} dicts.
+
+    Circuit breaker: skips the OpenAI embedding call entirely when
+    Supabase is known to be unavailable, avoiding wasted API cost.
     """
     if not DATABASE_URL:
         return []
 
+    # ── CIRCUIT BREAKER CHECK ──────────────────────────────────
+    # Only compute the embedding if the DB is actually reachable.
+    # This avoids paying for an OpenAI call that will be thrown away.
+    if not _db_is_available():
+        return []
+
     try:
-        embedding = embed_text_simple(query, "")  # no doc prefix for queries
-        conn = get_conn()
+        embedding = embed_text_simple(query, "")
+        conn = get_conn()  # get_conn() marks breaker failed on error
         cur = conn.cursor()
 
         cur.execute("""
@@ -332,11 +403,12 @@ def semantic_search(query: str, n_results: int = 4) -> list[dict]:
                 "similarity": float(row[3]),
             }
             for row in rows
-            if float(row[3]) > 0.2  # minimum similarity threshold
+            if float(row[3]) > 0.2
         ]
 
     except Exception as e:
-        print(f"[RAG] search error: {e}")
+        _mark_db_failed(e)
+        logger.error("[RAG] search error: %s", e)
         return []
 
 
@@ -360,8 +432,11 @@ def retrieve_context(query: str) -> str:
     """
     Main entry point — combines pgvector semantic search with keyword FAQ search.
     Returns merged context from both sources for richer, more accurate responses.
+
+    When Supabase is unavailable the circuit breaker suppresses the pgvector
+    attempt entirely and returns keyword-only context at zero extra cost.
     """
-    # Get pgvector results from policy PDFs
+    # Get pgvector results from policy PDFs (skipped automatically if DB is down)
     rag_results = semantic_search(query, n_results=3)
     rag_context = format_rag_context(rag_results) if rag_results else ""
 
@@ -406,7 +481,7 @@ def test_search():
             for r in results:
                 print(f"  [{r['similarity']:.0%}] {r['document']} — {r['content'][:120]}...")
         else:
-            print("  No results (run --ingest first)")
+            print("  No results (run --ingest first, or check Supabase is running)")
 
 
 # ── 8. MAIN ──────────────────────────────────────────────────────

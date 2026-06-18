@@ -38,7 +38,7 @@ socketio = SocketIO(
     engineio_logger=False,
 )
 
-# ── Env vars ────────────────────────────────────────────────────────────────
+# ── Env vars ─────────────────────────────────────────────────────────────────
 ANTHROPIC_KEY   = os.environ.get("ANTHROPIC_API_KEY", "")
 DEEPGRAM_KEY    = os.environ.get("DEEPGRAM_API_KEY", "")
 ELEVENLABS_KEY  = os.environ.get("ELEVENLABS_API_KEY", "")
@@ -46,11 +46,11 @@ SIMLI_API_KEY   = os.environ.get("SIMLI_API_KEY", "")
 SIMLI_FACE_ID   = os.environ.get("SIMLI_FACE_ID", "tmp9i8bbq7")
 N8N_WEBHOOK_URL = os.environ.get("N8N_WEBHOOK_URL", "")
 
-# ── Per-socket state ─────────────────────────────────────────────────────────
+# ── Per-socket state ──────────────────────────────────────────────────────────
 sessions: dict[str, dict] = {}
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def make_tts_mp3(text: str) -> str | None:
     try:
@@ -61,14 +61,44 @@ def make_tts_mp3(text: str) -> str | None:
         return None
 
 
-def agent_and_tts(sid: str, text: str):
+def _maybe_fire_webhook(session: dict, result: dict, agent: InsurVoiceAgent):
+    """
+    Fire the n8n webhook for EVERY call turn, not just escalations.
+    The n8n SWITCH node handles the branching between escalated and
+    non-escalated paths — this end just sends the data for all calls
+    so Google Sheets logging is complete.  FIX [4] + FIX [10].
+    """
+    if not N8N_WEBHOOK_URL:
+        return
+    fire_n8n_webhook(
+        call_id=session["call_id"],
+        intent=result.get("intent", ""),
+        route=result.get("route", ""),
+        language="en",
+        turn_count=session["turn_count"],
+        resolved=not result.get("should_escalate", False),
+        escalated=result.get("should_escalate", False),
+        handoff_summary=result.get("handoff_summary", ""),
+        compliance_passed=True,
+        conversation_history=agent.conversation_history,
+    )
+
+
+def agent_and_tts(sid: str, text: str, is_greeting: bool = False):
+    """
+    Run the agent, synthesise TTS, emit reply over SocketIO.
+    is_greeting=True for the synthetic server greeting — passed through
+    to agent.respond() so it skips failure-counter tracking.  FIX [2].
+    """
     session = sessions.get(sid)
     if not session:
         return
     agent = session["agent"]
 
     try:
-        result     = agent.respond(text)
+        # FIX [2]: pass _is_greeting flag so the greeting turn doesn't
+        # increment consecutive_failures and poison auto-escalation.
+        result     = agent.respond(text, _is_greeting=is_greeting)
         reply_text = result["response"]
         audio_b64  = make_tts_mp3(reply_text)
         session["turn_count"] += 1
@@ -82,19 +112,11 @@ def agent_and_tts(sid: str, text: str):
             "agent_trace":     [],
         }, to=sid)
 
-        if N8N_WEBHOOK_URL and result.get("should_escalate"):
-            fire_n8n_webhook(
-                call_id=session["call_id"],
-                intent=result.get("intent", ""),
-                route=result.get("route", ""),
-                language="en",
-                turn_count=session["turn_count"],
-                resolved=False,
-                escalated=True,
-                handoff_summary=result.get("handoff_summary", ""),
-                compliance_passed=True,
-                conversation_history=agent.conversation_history,
-            )
+        # FIX [10]: fire webhook for ALL turns (not only escalations).
+        # Skip the greeting turn — it's an internal synthetic message,
+        # not a real customer interaction worth logging.
+        if not is_greeting:
+            _maybe_fire_webhook(session, result, agent)
 
     except Exception as e:
         log.error("[%s] agent_and_tts error: %s", sid, e)
@@ -106,7 +128,7 @@ def agent_and_tts(sid: str, text: str):
         }, to=sid)
 
 
-# ── REST routes ──────────────────────────────────────────────────────────────
+# ── REST routes ───────────────────────────────────────────────────────────────
 
 @app.route("/")
 def index():
@@ -179,6 +201,14 @@ def api_text():
     if ELEVENLABS_KEY:
         audio_b64 = make_tts_mp3(reply_text)
 
+    # FIX [5]: keep session turn_count in sync when text path reuses a session
+    if session:
+        session["turn_count"] += 1
+
+    # FIX [4]: fire webhook for text-path turns too (escalated or not)
+    if session:
+        _maybe_fire_webhook(session, result, agent)
+
     return jsonify({
         "reply":           reply_text,
         "intent":          result.get("intent", ""),
@@ -192,14 +222,20 @@ def api_text():
 @app.route("/api/reset", methods=["POST"])
 def api_reset():
     sid = request.headers.get("X-Socket-ID", "")
-    if sid and sid in sessions:
-        sessions[sid]["agent"].reset()
-        sessions[sid]["turn_count"] = 0
-        sessions[sid]["call_id"]    = str(uuid.uuid4())
+    # FIX [6]: warn clearly if the header is missing so it's not a silent no-op
+    if not sid:
+        log.warning("/api/reset called without X-Socket-ID header — nothing reset")
+        return jsonify({"ok": False, "error": "X-Socket-ID header required"}), 400
+    if sid not in sessions:
+        log.warning("/api/reset: session %s not found", sid)
+        return jsonify({"ok": False, "error": "session not found"}), 404
+    sessions[sid]["agent"].reset()
+    sessions[sid]["turn_count"] = 0
+    sessions[sid]["call_id"]    = str(uuid.uuid4())
     return jsonify({"ok": True})
 
 
-# ── Socket events ─────────────────────────────────────────────────────────────
+# ── Socket events ──────────────────────────────────────────────────────────────
 
 @socketio.on("connect")
 def on_connect():
@@ -219,11 +255,13 @@ def on_connect():
         "simli_face_id":      SIMLI_FACE_ID,
     })
 
-    # 6s delay so Simli has time to connect before greeting audio plays
+    # 6s delay so Simli has time to connect before greeting audio plays.
+    # FIX [2]: pass is_greeting=True so the synthetic prompt does not count
+    # toward the consecutive_failures auto-escalation threshold.
     def _delayed_greeting():
         time.sleep(6)
         if sid in sessions:
-            agent_and_tts(sid, "Hello, please greet the customer.")
+            agent_and_tts(sid, "Hello, please greet the customer.", is_greeting=True)
 
     threading.Thread(target=_delayed_greeting, daemon=True).start()
 

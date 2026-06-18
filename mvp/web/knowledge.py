@@ -100,9 +100,11 @@ def retrieve_context(query: str, top_k: int = 2) -> str:
     """
     faqs = _load_kb()
 
-    # Strip punctuation from query before splitting into words
+    # Strip punctuation from query before splitting into words.
+    # FIX [8]: use >= 3 instead of > 3 so short but meaningful insurance
+    # terms are included: "pay", "owe", "due", "fee", "tax", "gas", "ice".
     query_clean = re.sub(r"[^\w\s]", " ", query.lower())
-    query_words = [w for w in query_clean.split() if len(w) > 3]
+    query_words = [w for w in query_clean.split() if len(w) >= 3]
 
     scored = []
     for faq in faqs:

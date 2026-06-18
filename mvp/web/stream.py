@@ -116,15 +116,21 @@ class DeepgramStreamSession:
         return False
 
     def _is_noise(self, text: str, confidence: float) -> bool:
-        """Filter out likely noise/garbled transcriptions."""
-        # Low confidence score
-        if confidence < 0.6:
+        """Filter out likely noise/garbled transcriptions.
+
+        FIX [12]: Threshold lowered from 0.6 to 0.5. nova-3 handles accents well
+        but non-native speakers can legitimately score 0.50–0.60. Dropping valid
+        speech at 0.6 causes users to repeat themselves unnecessarily.
+        The capitalised-words heuristic catches most actual noise independently.
+        """
+        # FIX [12]: was 0.6 — lowered to 0.5 to avoid dropping valid non-native speech
+        if confidence < 0.5:
             return True
-        # Nonsense patterns — random capitalised words that don't form a sentence
+        # Nonsense patterns — random capitalised words that don't form a sentence.
+        # If every word is capitalised and it's more than 3 words = likely garbled.
         words = text.split()
         if len(words) <= 2:
-            return False  # short phrases are ok even if odd
-        # If every word is capitalised and it's more than 3 words = likely garbled
+            return False
         if len(words) > 3 and sum(1 for w in words if w[0].isupper()) == len(words):
             return True
         return False
