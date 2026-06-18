@@ -300,8 +300,10 @@ def api_reset():
         log.warning("/api/reset: session %s not found", sid)
         return jsonify({"ok": False, "error": "session not found"}), 404
     sessions[sid]["agent"].reset()
-    sessions[sid]["turn_count"] = 0
-    sessions[sid]["call_id"]    = str(uuid.uuid4())
+    sessions[sid]["turn_count"]    = 0
+    sessions[sid]["call_id"]       = str(uuid.uuid4())
+    sessions[sid]["greeting_sent"] = False
+    sessions[sid]["start_time"]    = time.monotonic()
     return jsonify({"ok": True})
 
 
@@ -313,10 +315,12 @@ def on_connect():
     log.info("Client connected: %s", sid)
 
     sessions[sid] = {
-        "agent":      InsurVoiceAgent(api_key=ANTHROPIC_KEY, model=LLM_MODEL),
-        "dg_session": None,
-        "call_id":    str(uuid.uuid4()),
-        "turn_count": 0,
+        "agent":          InsurVoiceAgent(api_key=ANTHROPIC_KEY, model=LLM_MODEL),
+        "dg_session":     None,
+        "call_id":        str(uuid.uuid4()),
+        "turn_count":     0,
+        "greeting_sent":  False,   # prevents duplicate greeting
+        "start_time":     time.monotonic(),  # for early-message debounce
     }
 
     emit("connected", {
@@ -330,7 +334,8 @@ def on_connect():
     # toward the consecutive_failures auto-escalation threshold.
     def _delayed_greeting():
         time.sleep(6)
-        if sid in sessions:
+        if sid in sessions and not sessions[sid]["greeting_sent"]:
+            sessions[sid]["greeting_sent"] = True
             agent_and_tts(sid, "Hello, please greet the customer.", is_greeting=True)
 
     threading.Thread(target=_delayed_greeting, daemon=True).start()
@@ -359,6 +364,28 @@ def on_start_stream():
         if not is_final:
             socketio.emit("partial_transcript", {"text": text}, to=sid)
             return
+
+        text = text.strip()
+        if not text:
+            return
+
+        # Debounce: ignore if same text was processed within last 3 seconds
+        now = time.monotonic()
+        last_text = session.get("_last_transcript", "")
+        last_time = session.get("_last_transcript_time", 0)
+        if text.lower() == last_text.lower() and now - last_time < 3.0:
+            log.info("[%s] Duplicate transcript suppressed: %s", sid, text)
+            return
+        session["_last_transcript"] = text
+        session["_last_transcript_time"] = now
+
+        # Ignore pure greeting words in first 10s — greeting already handled by server
+        elapsed = now - session.get("start_time", now)
+        greeting_words = {"hello", "hi", "hey", "hallo", "hej"}
+        if elapsed < 10.0 and text.lower().strip(".,!?") in greeting_words:
+            log.info("[%s] Greeting word suppressed in first 10s: %s", sid, text)
+            return
+
         socketio.emit("transcript", {"text": text, "language": language}, to=sid)
         threading.Thread(target=agent_and_tts, args=(sid, text), daemon=True).start()
 
