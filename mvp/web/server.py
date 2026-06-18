@@ -68,11 +68,22 @@ def _maybe_fire_webhook(session: dict, result: dict, agent: InsurVoiceAgent):
     Fire the n8n webhook for EVERY call turn, not just escalations.
     Also writes to Supabase call_log directly so the DB stays in sync
     with Google Sheets regardless of n8n availability.
+
+    Guard: skip if this looks like a greeting escalation —
+    no conversation history yet and intent is general_info.
+    This handles the edge case where the greeting thread fires
+    on a session that hit a transient error.
     """
     from n8n_integration import generate_call_summary, assess_urgency
 
-    escalated = result.get("should_escalate", False)
+    # Skip spurious escalations on the greeting turn:
+    # real customer conversations always have at least 1 history entry
     intent    = result.get("intent", "")
+    escalated = result.get("should_escalate", False)
+    if escalated and not agent.conversation_history:
+        log.info("[server] Suppressing escalation webhook — no conversation history (greeting error)")
+        return
+
     route     = result.get("route", "")
     summary   = generate_call_summary(agent.conversation_history, route, not escalated)
     urgency   = assess_urgency(intent, session["turn_count"], result.get("handoff_summary", "") or "")
@@ -145,6 +156,10 @@ def agent_and_tts(sid: str, text: str, is_greeting: bool = False):
         # never trigger n8n, and never escalate even if it hits an error.
         if not is_greeting:
             _maybe_fire_webhook(session, result, agent)
+        elif result.get("should_escalate"):
+            # Greeting escalated due to technical error — reset it silently
+            log.warning("[%s] Greeting escalated (technical error) — suppressed", sid)
+            result["should_escalate"] = False
 
     except Exception as e:
         log.error("[%s] agent_and_tts error: %s", sid, e)
