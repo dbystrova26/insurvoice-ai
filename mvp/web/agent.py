@@ -159,6 +159,9 @@ class InsurVoiceAgent:
         except anthropic.AuthenticationError:
             raise
         except Exception as e:
+            import traceback
+            log.error("[agent] respond() exception on turn %d: %s\n%s",
+                      self.turn_count, e, traceback.format_exc())
             result = {
                 "intent": "general_info",
                 "confidence": 0.0,
