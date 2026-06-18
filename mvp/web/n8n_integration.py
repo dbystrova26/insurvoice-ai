@@ -78,6 +78,7 @@ def fire_n8n_webhook(
     customer_name: str = None,
     customer_email: str = None,
     duration_seconds: int = 0,
+    llm_used: str = "claude-sonnet-4-6",
 ) -> bool:
     """
     Fire the n8n webhook in a background thread (non-blocking).
@@ -108,6 +109,7 @@ def fire_n8n_webhook(
         "duration_seconds": duration_seconds,
         "customer_name":    customer_name or "Unknown",
         "customer_email":   customer_email or "",
+        "llm_used":         llm_used,
     }
 
     def _send():

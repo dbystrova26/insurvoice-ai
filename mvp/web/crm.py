@@ -143,9 +143,18 @@ def log_call_to_db(call_data: dict):
             INSERT INTO call_log
               (call_id, customer_id, language, intent, route, escalated,
                resolved, turn_count, duration_seconds, compliance_passed,
-               urgency, summary, handoff_summary)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-            ON CONFLICT (call_id) DO NOTHING
+               urgency, summary, handoff_summary, llm_used)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            ON CONFLICT (call_id) DO UPDATE SET
+              intent           = EXCLUDED.intent,
+              route            = EXCLUDED.route,
+              escalated        = EXCLUDED.escalated,
+              resolved         = EXCLUDED.resolved,
+              turn_count       = EXCLUDED.turn_count,
+              urgency          = EXCLUDED.urgency,
+              summary          = EXCLUDED.summary,
+              handoff_summary  = EXCLUDED.handoff_summary,
+              llm_used         = EXCLUDED.llm_used
         """, (
             call_data.get('call_id'),
             call_data.get('customer_id'),
@@ -160,6 +169,7 @@ def log_call_to_db(call_data: dict):
             call_data.get('urgency', 'low'),
             call_data.get('summary'),
             call_data.get('handoff_summary'),
+            call_data.get('llm_used', 'claude-sonnet-4-6'),
         ))
         conn.commit()
         cur.close()

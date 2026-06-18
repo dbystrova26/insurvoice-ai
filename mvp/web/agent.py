@@ -72,13 +72,14 @@ class InsurVoiceAgent:
     and generates handoff summaries for human agents.
     """
 
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, model: str = "claude-sonnet-4-6"):
         self.client = anthropic.Anthropic(api_key=api_key)
+        self.model = model  # stored on session so webhook and call_log can read it
         self.conversation_history: list[dict] = []
         self.turn_count: int = 0
         self.consecutive_failures: int = 0
         self.is_first_turn: bool = True
-        self._is_greeting_turn: bool = False  # FIX [2]: mark synthetic greeting turns
+        self._is_greeting_turn: bool = False
 
     def _build_history_section(self) -> str:
         """Build conversation history for context window."""
@@ -152,10 +153,7 @@ class InsurVoiceAgent:
 
         try:
             msg = self.client.messages.create(
-                model="claude-sonnet-4-6",
-                max_tokens=300,
-                system=system_prompt,
-                messages=[{"role": "user", "content": user_message}],
+                model=self.model,
             )
             result = self._parse_response(msg.content[0].text)
         except anthropic.AuthenticationError:
@@ -253,8 +251,7 @@ class InsurVoiceAgent:
 
         try:
             msg = self.client.messages.create(
-                model="claude-sonnet-4-6",
-                max_tokens=120,
+                model=self.model,
                 messages=[{"role": "user", "content": prompt_content}],
             )
             return msg.content[0].text.strip()

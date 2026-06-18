@@ -20,6 +20,7 @@ from agent import InsurVoiceAgent
 from stream import DeepgramStreamSession
 from voice import synthesize_elevenlabs_mp3
 from n8n_integration import fire_n8n_webhook
+from crm import log_call_to_db
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -45,6 +46,7 @@ ELEVENLABS_KEY  = os.environ.get("ELEVENLABS_API_KEY", "")
 SIMLI_API_KEY   = os.environ.get("SIMLI_API_KEY", "")
 SIMLI_FACE_ID   = os.environ.get("SIMLI_FACE_ID", "tmp9i8bbq7")
 N8N_WEBHOOK_URL = os.environ.get("N8N_WEBHOOK_URL", "")
+LLM_MODEL       = os.environ.get("LLM_MODEL", "claude-sonnet-4-6")
 
 # ── Per-socket state ──────────────────────────────────────────────────────────
 sessions: dict[str, dict] = {}
@@ -64,23 +66,49 @@ def make_tts_mp3(text: str) -> str | None:
 def _maybe_fire_webhook(session: dict, result: dict, agent: InsurVoiceAgent):
     """
     Fire the n8n webhook for EVERY call turn, not just escalations.
-    The n8n SWITCH node handles the branching between escalated and
-    non-escalated paths — this end just sends the data for all calls
-    so Google Sheets logging is complete.  FIX [4] + FIX [10].
+    Also writes to Supabase call_log directly so the DB stays in sync
+    with Google Sheets regardless of n8n availability.
     """
+    from n8n_integration import generate_call_summary, assess_urgency
+
+    escalated = result.get("should_escalate", False)
+    intent    = result.get("intent", "")
+    route     = result.get("route", "")
+    summary   = generate_call_summary(agent.conversation_history, route, not escalated)
+    urgency   = assess_urgency(intent, session["turn_count"], result.get("handoff_summary", "") or "")
+
+    # Write to Supabase call_log
+    log_call_to_db({
+        "call_id":          session["call_id"],
+        "customer_id":      None,
+        "language":         "en",
+        "intent":           intent,
+        "route":            route,
+        "escalated":        escalated,
+        "resolved":         not escalated,
+        "turn_count":       session["turn_count"],
+        "duration_seconds": 0,
+        "compliance_passed": True,
+        "urgency":          urgency,
+        "summary":          summary,
+        "handoff_summary":  result.get("handoff_summary", ""),
+        "llm_used":         agent.model,
+    })
+
     if not N8N_WEBHOOK_URL:
         return
     fire_n8n_webhook(
         call_id=session["call_id"],
-        intent=result.get("intent", ""),
-        route=result.get("route", ""),
+        intent=intent,
+        route=route,
         language="en",
         turn_count=session["turn_count"],
-        resolved=not result.get("should_escalate", False),
-        escalated=result.get("should_escalate", False),
+        resolved=not escalated,
+        escalated=escalated,
         handoff_summary=result.get("handoff_summary", ""),
         compliance_passed=True,
         conversation_history=agent.conversation_history,
+        llm_used=agent.model,
     )
 
 
@@ -216,7 +244,7 @@ def api_text():
     if session:
         agent = session["agent"]
     else:
-        agent = InsurVoiceAgent(api_key=ANTHROPIC_KEY)
+        agent = InsurVoiceAgent(api_key=ANTHROPIC_KEY, model=LLM_MODEL)
 
     result = agent.respond(text)
     reply_text = result["response"]
@@ -267,7 +295,7 @@ def on_connect():
     log.info("Client connected: %s", sid)
 
     sessions[sid] = {
-        "agent":      InsurVoiceAgent(api_key=ANTHROPIC_KEY),
+        "agent":      InsurVoiceAgent(api_key=ANTHROPIC_KEY, model=LLM_MODEL),
         "dg_session": None,
         "call_id":    str(uuid.uuid4()),
         "turn_count": 0,
