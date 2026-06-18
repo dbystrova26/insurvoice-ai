@@ -2,7 +2,7 @@
 
 **File:** `compliance/eu_ai_act_compliance.md`  
 **System:** InsurVoice AI — Conversational AI Customer Service Agent  
-**Author:** Daria Bystrova | Ironhack AI Consulting Bootcamp | June 2025  
+**Author:** Daria Bystrova | Ironhack AI Consulting Bootcamp | June 2026  
 **Regulation:** EU AI Act — Regulation (EU) 2024/1689, in force August 2024
 
 ---
@@ -129,9 +129,11 @@ Even as limited risk, best-practice implementation addresses the requirements th
 ## Part C: Conformity Assessment Summary
 
 ### System Description
-InsurVoice AI is a conversational AI customer service agent deployed by Allianz Direct GmbH (fictional) to handle Tier-1 insurance customer contacts. The system classifies customer intent, retrieves relevant information from a curated knowledge base, and generates natural language responses. It is deployed via Voiceflow (dialogue management) and n8n (orchestration), using Anthropic Claude claude-opus-4-6 as the underlying language model.
+
+InsurVoice AI is a conversational AI customer service agent deployed by Allianz Direct GmbH (fictional) to handle Tier-1 insurance customer contacts. The system classifies customer intent, retrieves relevant information from a curated knowledge base, and generates natural language responses. It is deployed via a Flask + SocketIO web interface with n8n automation, using Anthropic Claude claude-opus-4-6 as the underlying language model and Deepgram nova-3 for speech-to-text.
 
 ### Risk Class and Basis
+
 **Limited Risk — Article 52(1) EU AI Act**
 
 The system interacts with natural persons (insurance customers) via voice and chat interface. It does not make decisions, assess creditworthiness, process special category data, or perform any function listed in Annex III. Its sole function is information retrieval and natural language response generation.
@@ -151,7 +153,7 @@ The system interacts with natural persons (insurance customers) via voice and ch
 |---|---|---|
 | No formal conformity declaration (Art. 47) | Not required for limited risk, but will be drafted as best practice | Phase 2 pilot |
 | No formal incident reporting procedure (Art. 73) | Draft incident log template and response procedure | Phase 2 pilot |
-| Voice channel not yet assessed | When voice is added, re-run classification — voice biometric data triggers additional assessment | Phase 3 |
+| Voice channel not yet assessed for production telephony | When Twilio voice is added, re-run classification | Phase 3 |
 | Post-market monitoring plan | Formalise monthly QA audit into documented procedure | Phase 2 pilot |
 
 ---
@@ -165,20 +167,19 @@ The system interacts with natural persons (insurance customers) via voice and ch
 | 1 | General system description — purpose, intended use, known limitations | ✅ Complete (use_case_definition.md) |
 | 2 | Intended deployment context — industry, user types, geographic scope | ✅ Complete |
 | 3 | Risk classification with step-by-step reasoning | ✅ Complete (this document) |
-| 4 | System architecture — Voiceflow → n8n → Claude API data flow diagram | ✅ Complete (mvp_documentation.md) |
+| 4 | System architecture — Flask + n8n + Claude API data flow diagram | ✅ Complete (architecture.png + README) |
 | 5 | Underlying AI model — Claude claude-opus-4-6, Anthropic; general-purpose LLM; not fine-tuned | ✅ Complete |
 | 6 | Knowledge base governance — content authoring, QA, update cycle | Partial |
 | 7 | Input/output specification — message format, response schema, escalation flags | ✅ Complete (poc_workflow.json) |
 | 8 | Human oversight mechanisms — escalation logic, QA audit procedure | ✅ Complete |
 | 9 | Transparency measures — UI disclosure implementation | ✅ Complete |
-| 10 | Accuracy testing methodology — test case set, acceptance threshold, retest criteria | Scoped for production |
+| 10 | Accuracy testing methodology — test case set, acceptance threshold, retest criteria | ✅ Partial (evaluate.py, 30 test cases) |
 | 11 | Robustness and adversarial testing — injection tests, edge case handling | Scoped for production |
 | 12 | Cybersecurity measures — key management, TLS, access control | Scoped for production |
 | 13 | Post-market monitoring plan — metrics, alert thresholds, review cadence | Scoped for production |
 | 14 | Incident and serious incident reporting procedure (Art. 73) | Scoped for production |
 | 15 | Conformity Assessment Summary (this document, Part C) | ✅ Complete |
 | 16 | EU Declaration of Conformity (Art. 47) — production only | Scoped for production |
-
 
 ---
 
@@ -188,9 +189,9 @@ Because InsurVoice operates as a **voice agent** (not text-only), the following 
 
 | Question | Finding |
 |---|---|
-| Does voice processing trigger Annex III biometric category (point 1)? | **No.** Annex III point 1 covers biometric *identification/categorisation*. InsurVoice transcribes speech content (what is said), it does not identify or categorise speakers by voiceprint. Speech-to-text is not biometric identification. |
+| Does voice processing trigger Annex III biometric category (point 1)? | **No.** Annex III point 1 covers biometric *identification/categorisation*. InsurVoice transcribes speech content (what is said) via Deepgram nova-3; it does not identify or categorise speakers by voiceprint. Speech-to-text is not biometric identification. |
 | Does the AI voice need additional disclosure? | **Yes — and it's stronger for voice.** Art. 52(1) disclosure is delivered audibly at call start: "Hello, you're speaking with InsurVoice, an AI assistant." A caller cannot see a screen label, so the spoken disclosure is essential. |
-| Does synthetic voice output need labelling (Art. 52(3))? | **Yes.** The AI-generated voice is clearly identified as AI at the start; callers are never misled into believing they speak to a human. |
+| Does synthetic voice output need labelling (Art. 52(3))? | **Yes.** The AI-generated voice (ElevenLabs) is clearly identified as AI at the start; callers are never misled into believing they speak to a human. |
 | Deepfake / voice-cloning concerns? | InsurVoice uses a generic synthetic voice (ElevenLabs stock voice), NOT a clone of any real person. No impersonation risk. |
 
 **Conclusion:** the voice channel does not change the Limited Risk classification. It strengthens the importance of the Article 52 audible disclosure, which is implemented at the start of every call.
