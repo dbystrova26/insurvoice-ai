@@ -133,46 +133,75 @@ def format_customer_context(customer: dict) -> str:
 
 
 def log_call_to_db(call_data: dict):
-    """Log a completed call to the call_log table."""
+    """
+    Log a completed call to the call_log table.
+    Runs in a background thread with retry logic so transient Supabase
+    DNS failures (common on Render cold start) don't cause data loss.
+    Retries every 15 seconds for up to 5 minutes.
+    """
     if not DATABASE_URL:
         return
-    try:
-        conn = _get_conn()
-        cur = conn.cursor()
-        cur.execute("""
-            INSERT INTO call_log
-              (call_id, customer_id, language, intent, route, escalated,
-               resolved, turn_count, duration_seconds, compliance_passed,
-               urgency, summary, handoff_summary, llm_used)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-            ON CONFLICT (call_id) DO UPDATE SET
-              intent           = EXCLUDED.intent,
-              route            = EXCLUDED.route,
-              escalated        = EXCLUDED.escalated,
-              resolved         = EXCLUDED.resolved,
-              turn_count       = EXCLUDED.turn_count,
-              urgency          = EXCLUDED.urgency,
-              summary          = EXCLUDED.summary,
-              handoff_summary  = EXCLUDED.handoff_summary,
-              llm_used         = EXCLUDED.llm_used
-        """, (
-            call_data.get('call_id'),
-            call_data.get('customer_id'),
-            call_data.get('language', 'en'),
-            call_data.get('intent'),
-            call_data.get('route'),
-            call_data.get('escalated', False),
-            call_data.get('resolved', False),
-            call_data.get('turn_count', 1),
-            call_data.get('duration_seconds', 0),
-            call_data.get('compliance_passed', True),
-            call_data.get('urgency', 'low'),
-            call_data.get('summary'),
-            call_data.get('handoff_summary'),
-            call_data.get('llm_used', 'claude-sonnet-4-6'),
-        ))
-        conn.commit()
-        cur.close()
-        conn.close()
-    except Exception as e:
-        print(f"[CRM] log error: {e}")
+
+    import threading
+
+    def _write_with_retry():
+        import time
+        max_attempts = 20      # 20 × 15s = 5 minutes max
+        delay = 15             # seconds between retries
+
+        for attempt in range(1, max_attempts + 1):
+            try:
+                conn = _get_conn()
+                cur = conn.cursor()
+                cur.execute("""
+                    INSERT INTO call_log
+                      (call_id, customer_id, language, intent, route, escalated,
+                       resolved, turn_count, duration_seconds, compliance_passed,
+                       urgency, summary, handoff_summary, llm_used)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    ON CONFLICT (call_id) DO UPDATE SET
+                      intent           = EXCLUDED.intent,
+                      route            = EXCLUDED.route,
+                      escalated        = EXCLUDED.escalated,
+                      resolved         = EXCLUDED.resolved,
+                      turn_count       = EXCLUDED.turn_count,
+                      urgency          = EXCLUDED.urgency,
+                      summary          = EXCLUDED.summary,
+                      handoff_summary  = EXCLUDED.handoff_summary,
+                      llm_used         = EXCLUDED.llm_used
+                """, (
+                    call_data.get('call_id'),
+                    call_data.get('customer_id'),
+                    call_data.get('language', 'en'),
+                    call_data.get('intent'),
+                    call_data.get('route'),
+                    call_data.get('escalated', False),
+                    call_data.get('resolved', False),
+                    call_data.get('turn_count', 1),
+                    call_data.get('duration_seconds', 0),
+                    call_data.get('compliance_passed', True),
+                    call_data.get('urgency', 'low'),
+                    call_data.get('summary'),
+                    call_data.get('handoff_summary'),
+                    call_data.get('llm_used', 'claude-sonnet-4-6'),
+                ))
+                conn.commit()
+                cur.close()
+                conn.close()
+                # Reset RAG circuit breaker so pgvector also recovers
+                try:
+                    from rag import _check_db_health
+                    _check_db_health()
+                except Exception:
+                    pass
+                print(f"[CRM] call_log written: {call_data.get('call_id')} (attempt {attempt})")
+                return  # success — stop retrying
+
+            except Exception as e:
+                if attempt < max_attempts:
+                    print(f"[CRM] log attempt {attempt}/{max_attempts} failed, retry in {delay}s: {e}")
+                    time.sleep(delay)
+                else:
+                    print(f"[CRM] log failed after {max_attempts} attempts: {e}")
+
+    threading.Thread(target=_write_with_retry, daemon=True).start()
