@@ -140,9 +140,9 @@ def agent_and_tts(sid: str, text: str, is_greeting: bool = False):
             "agent_trace":     [],
         }, to=sid)
 
-        # FIX [10]: fire webhook for ALL turns (not only escalations).
-        # Skip the greeting turn — it's an internal synthetic message,
-        # not a real customer interaction worth logging.
+        # FIX: skip webhook and call_log entirely for synthetic greeting turns.
+        # The greeting is an internal prompt — it should never appear in logs,
+        # never trigger n8n, and never escalate even if it hits an error.
         if not is_greeting:
             _maybe_fire_webhook(session, result, agent)
 

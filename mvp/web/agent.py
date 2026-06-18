@@ -162,10 +162,10 @@ class InsurVoiceAgent:
             result = {
                 "intent": "general_info",
                 "confidence": 0.0,
-                "response": "I'm having a technical problem. Let me connect you to a colleague right away.",
-                "should_escalate": True,
-                "escalation_reason": f"Technical error: {str(e)[:50]}",
-                "route": "error",
+                "response": "I'm having a technical problem. Let me connect you to a colleague right away." if not _is_greeting else "Hello, you're speaking with InsurVoice, an AI assistant for Allianz Direct. How can I help you today?",
+                "should_escalate": False if _is_greeting else True,
+                "escalation_reason": None if _is_greeting else f"Technical error: {str(e)[:50]}",
+                "route": "general" if _is_greeting else "error",
             }
 
         # Determine route based on intent

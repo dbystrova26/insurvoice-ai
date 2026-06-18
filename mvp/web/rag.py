@@ -50,7 +50,7 @@ _db_last_checked: float = 0.0
 DB_RETRY_INTERVAL = 60   # seconds between retry attempts when DB is known dead
 DB_CONNECT_TIMEOUT = 5   # seconds before giving up on a single connection attempt
 DB_STARTUP_RETRIES = 3   # extra attempts on first probe (Render cold-start DNS lag)
-DB_STARTUP_DELAY  = 3    # seconds between startup retry attempts
+DB_STARTUP_DELAY  = 5    # seconds between startup retry attempts (increased from 3s)
 
 
 def _check_db_health(startup: bool = False) -> bool:
