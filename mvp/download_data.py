@@ -33,8 +33,12 @@ import csv
 import requests
 import pathlib
 
-DATA_DIR = pathlib.Path(__file__).parent / "data"
-DATA_DIR.mkdir(exist_ok=True)
+# FIX: DATA_DIR must point to mvp/web/data — the same directory that
+# knowledge.py reads from. Previously this was pathlib.Path(__file__).parent / "data"
+# which resolved to mvp/data (one level up), so the guard never saw the existing
+# 87-FAQ file and overwrote it with the 7-entry fallback on every fresh deploy.
+DATA_DIR = pathlib.Path(__file__).parent / "web" / "data"
+DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def log(msg):
@@ -121,6 +125,10 @@ def create_knowledge_base():
     (GDV - German Insurance Association public consumer guides).
 
     Source reference: https://www.gdv.de/de/themen/news/ratgeber
+
+    IMPORTANT: if a larger knowledge base already exists at the target path
+    (e.g. the 87-FAQ production version committed to the repo), this function
+    preserves it and does not overwrite with the 7-entry seed.
     """
     print("\n[2/3] Building knowledge base (insurance FAQs)...")
 
@@ -189,7 +197,10 @@ def create_knowledge_base():
     }
 
     out = DATA_DIR / "knowledge_base.json"
-    # Skip overwriting if a larger knowledge base already exists (e.g. 154-FAQ version)
+
+    # Preserve a larger existing knowledge base (e.g. 87-FAQ production version).
+    # This guard fires on every Render deploy — if the repo contains the full KB
+    # at mvp/web/data/knowledge_base.json, this script leaves it untouched.
     if out.exists():
         try:
             existing = json.loads(out.read_text(encoding="utf-8"))
@@ -199,6 +210,7 @@ def create_knowledge_base():
                 return True
         except Exception:
             pass
+
     with open(out, "w", encoding="utf-8") as f:
         json.dump(kb, f, indent=2, ensure_ascii=False)
     log(f"Knowledge base written: {len(kb['faqs'])} FAQ entries → {out}")
@@ -304,7 +316,7 @@ def main():
     print(f"✓ Files in: {DATA_DIR.resolve()}")
     print("✓ No personal data downloaded — GDPR compliant.")
     print("=" * 60)
-    print("\nNext step: streamlit run app.py")
+    print("\nNext step: python server.py")
 
 
 if __name__ == "__main__":
