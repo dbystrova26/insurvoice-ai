@@ -151,6 +151,30 @@ def health():
     })
 
 
+@app.route("/api/ping-db")
+def ping_db():
+    """
+    Lightweight keep-alive endpoint for UptimeRobot (free plan).
+    Hit this every 5 minutes to prevent Render instance sleep AND
+    Supabase free-tier auto-pause (which triggers after 7 days inactivity).
+
+    UptimeRobot setup:
+      Monitor type: HTTP(s)
+      URL: https://insurvoice-ai.onrender.com/api/ping-db
+      Interval: 5 minutes
+    """
+    try:
+        import psycopg2
+        conn = psycopg2.connect(os.environ.get("DATABASE_URL", ""), connect_timeout=5)
+        conn.close()
+        # Reset circuit breaker so RAG recovers immediately after a cold start
+        from rag import _check_db_health
+        _check_db_health()
+        return jsonify({"status": "ok", "db": "reachable"})
+    except Exception as e:
+        return jsonify({"status": "ok", "db": "unreachable", "error": str(e)[:80]}), 200
+
+
 @app.route("/api/simli/session")
 def simli_session():
     if not SIMLI_API_KEY:

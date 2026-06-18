@@ -47,34 +47,51 @@ client = anthropic.Anthropic(api_key=ANTHROPIC_KEY)
 
 _db_ok: bool | None = None
 _db_last_checked: float = 0.0
-DB_RETRY_INTERVAL = 60  # seconds between retry attempts when DB is down
-DB_CONNECT_TIMEOUT = 5  # seconds before giving up on a connection attempt
+DB_RETRY_INTERVAL = 60   # seconds between retry attempts when DB is known dead
+DB_CONNECT_TIMEOUT = 5   # seconds before giving up on a single connection attempt
+DB_STARTUP_RETRIES = 3   # extra attempts on first probe (Render cold-start DNS lag)
+DB_STARTUP_DELAY  = 3    # seconds between startup retry attempts
 
 
-def _check_db_health() -> bool:
+def _check_db_health(startup: bool = False) -> bool:
     """
     Probe the DB with a lightweight connection.
     Updates the circuit breaker state and returns True if healthy.
     Never raises — all exceptions are caught and logged.
+
+    startup=True: retry up to DB_STARTUP_RETRIES times with short delays.
+    This handles Render cold-start where DNS resolves slowly on first request
+    but is fine by the second or third attempt a few seconds later.
     """
     global _db_ok, _db_last_checked
     if not DATABASE_URL:
         _db_ok = False
         return False
-    try:
-        conn = psycopg2.connect(DATABASE_URL, connect_timeout=DB_CONNECT_TIMEOUT)
-        conn.close()
-        if not _db_ok:
-            logger.info("[RAG] Supabase connection restored — pgvector active")
-        _db_ok = True
-        _db_last_checked = time.monotonic()
-        return True
-    except Exception as e:
-        if _db_ok is not False:
-            logger.warning("[RAG] Supabase unavailable — falling back to keyword-only RAG. Error: %s", e)
-        _db_ok = False
-        _db_last_checked = time.monotonic()
-        return False
+
+    attempts = DB_STARTUP_RETRIES if startup else 1
+    last_exc = None
+
+    for attempt in range(attempts):
+        if attempt > 0:
+            time.sleep(DB_STARTUP_DELAY)
+        try:
+            conn = psycopg2.connect(DATABASE_URL, connect_timeout=DB_CONNECT_TIMEOUT)
+            conn.close()
+            if not _db_ok:
+                logger.info("[RAG] Supabase connection restored — pgvector active")
+            _db_ok = True
+            _db_last_checked = time.monotonic()
+            return True
+        except Exception as e:
+            last_exc = e
+            if startup and attempt < attempts - 1:
+                logger.info("[RAG] Startup DB probe attempt %d/%d failed, retrying...", attempt + 1, attempts)
+
+    if _db_ok is not False:
+        logger.warning("[RAG] Supabase unavailable — falling back to keyword-only RAG. Error: %s", last_exc)
+    _db_ok = False
+    _db_last_checked = time.monotonic()
+    return False
 
 
 def _db_is_available() -> bool:
@@ -85,9 +102,9 @@ def _db_is_available() -> bool:
     global _db_ok, _db_last_checked
     now = time.monotonic()
 
-    # Unknown state (startup) → always probe
+    # Unknown state (startup) → always probe, with retries for cold-start DNS lag
     if _db_ok is None:
-        return _check_db_health()
+        return _check_db_health(startup=True)
 
     # DB was working → still assume OK (errors in get_conn() will flip it)
     if _db_ok is True:
