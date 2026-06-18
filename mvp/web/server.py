@@ -162,7 +162,10 @@ def agent_and_tts(sid: str, text: str, is_greeting: bool = False):
             result["should_escalate"] = False
 
     except Exception as e:
-        log.error("[%s] agent_and_tts error: %s", sid, e)
+        import traceback
+        logging.getLogger(__name__).error(
+            "[server] agent_and_tts error for sid %s: %s\n%s",
+            sid, e, traceback.format_exc())
         socketio.emit("reply", {
             "reply":        "I'm having a technical issue. Let me connect you to a colleague.",
             "intent":       "error",

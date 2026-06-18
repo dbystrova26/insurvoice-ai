@@ -10,8 +10,11 @@ Responses are kept short and natural because they will be spoken aloud (TTS).
 
 import json
 import re
+import logging
 import anthropic
 from rag import retrieve_context
+
+log = logging.getLogger(__name__)
 
 
 SYSTEM_PROMPT_TEMPLATE = """You are InsurVoice, an AI voice agent for Allianz Direct insurance. The customer is speaking to you on a voice call — your response will be read aloud by a text-to-speech engine.
@@ -154,14 +157,18 @@ class InsurVoiceAgent:
         try:
             msg = self.client.messages.create(
                 model=self.model,
+                max_tokens=300,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_message}],
             )
             result = self._parse_response(msg.content[0].text)
         except anthropic.AuthenticationError:
             raise
         except Exception as e:
-            import traceback
-            log.error("[agent] respond() exception on turn %d: %s\n%s",
-                      self.turn_count, e, traceback.format_exc())
+            import traceback, logging as _logging
+            _logging.getLogger(__name__).error(
+                "[agent] respond() exception on turn %d: %s\n%s",
+                self.turn_count, e, traceback.format_exc())
             result = {
                 "intent": "general_info",
                 "confidence": 0.0,
@@ -255,6 +262,7 @@ class InsurVoiceAgent:
         try:
             msg = self.client.messages.create(
                 model=self.model,
+                max_tokens=120,
                 messages=[{"role": "user", "content": prompt_content}],
             )
             return msg.content[0].text.strip()
