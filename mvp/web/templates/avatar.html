@@ -182,8 +182,8 @@
     audioUnlocked = true;
     // Do NOT touch avatarAudio — it stays muted forever
     if (pendingGreetingAudio) {
-      const a = new Audio('data:audio/mpeg;base64,' + pendingGreetingAudio);
-      a.play().catch(() => {});
+      // FIX: use playWithSimliSync so greeting lip-sync is correct too
+      playWithSimliSync(pendingGreetingAudio, () => {});
       pendingGreetingAudio = null;
     }
   }
@@ -263,22 +263,42 @@
     }
   }
 
-  async function sendToSimli(audioBase64) {
-    if (!simliReady || !simliClient) return;
-    try {
-      const binary = atob(audioBase64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-      const decodeCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-      const audioBuffer = await decodeCtx.decodeAudioData(bytes.buffer.slice(0));
-      await decodeCtx.close();
-      const float32 = audioBuffer.getChannelData(0);
-      const int16 = new Int16Array(float32.length);
-      for (let i = 0; i < float32.length; i++) {
-        int16[i] = Math.max(-32768, Math.min(32767, Math.round(float32[i] * 32767)));
+  // FIX: unified audio handler — decode MP3 once, send PCM to Simli, then
+  // play the MP3. Previously sendToSimli() decoded async AFTER audio.play()
+  // had already started, causing 50–300 ms lip lag on every utterance.
+  //
+  // Now:  decode → sendAudioData → play  (all in one await chain)
+  // Simli receives the full PCM before the first audio frame is heard,
+  // so lips and voice start together.
+  async function playWithSimliSync(audioBase64, onDone) {
+    // Step 1: decode the MP3 to a Float32 AudioBuffer (single decode, shared data)
+    let int16 = null;
+    if (simliReady && simliClient) {
+      try {
+        const binary = atob(audioBase64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        const decodeCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+        const audioBuffer = await decodeCtx.decodeAudioData(bytes.buffer.slice(0));
+        await decodeCtx.close();
+        const float32 = audioBuffer.getChannelData(0);
+        int16 = new Int16Array(float32.length);
+        for (let i = 0; i < float32.length; i++) {
+          int16[i] = Math.max(-32768, Math.min(32767, Math.round(float32[i] * 32767)));
+        }
+        // Step 2: send PCM to Simli BEFORE starting audio playback
+        simliClient.sendAudioData(new Uint8Array(int16.buffer));
+      } catch (e) {
+        console.warn('Simli PCM send error:', e);
       }
-      simliClient.sendAudioData(new Uint8Array(int16.buffer));
-    } catch (e) { console.warn('Simli send error:', e); }
+    }
+
+    // Step 3: play the MP3 immediately after PCM is queued in Simli
+    // Both start in the same microtask — lips and voice are in sync
+    const audio = new Audio('data:audio/mpeg;base64,' + audioBase64);
+    audio.onended = onDone;
+    audio.onerror = onDone;
+    audio.play().catch(() => { onDone(); });
   }
 
   function closeSimli() {
@@ -350,13 +370,10 @@
           // Fallback timer for pending audio
           setTimeout(onAudioDone, 4000);
         } else {
-          const audio = new Audio('data:audio/mpeg;base64,' + d.audio_base64);
-          audio.onended = onAudioDone;
-          audio.onerror = onAudioDone;  // reopen mic even if audio fails
-          audio.play().catch(() => { onAudioDone(); });
+          // FIX: playWithSimliSync decodes once, sends PCM to Simli first,
+          // then plays the MP3 — lips and voice start together.
+          playWithSimliSync(d.audio_base64, onAudioDone);
         }
-
-        if (simliReady) sendToSimli(d.audio_base64);
       }
     });
 
@@ -429,9 +446,8 @@
       addMsg('bot', d.reply, d.intent);
       if (d.escalated) addMsg('escalation', 'Transferring to a colleague.');
       if (d.audio_base64) {
-        if (simliReady) sendToSimli(d.audio_base64);
-        const audio = new Audio('data:audio/mpeg;base64,' + d.audio_base64);
-        audio.play().catch(() => {});
+        // FIX: same sync fix as voice path — decode once, Simli first, then play
+        playWithSimliSync(d.audio_base64, () => {});
       }
     } catch (e) { hideThinking(); showErr('Error: ' + e.message); }
   };
